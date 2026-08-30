@@ -20,7 +20,7 @@ cake_autorate_version="3.3.0-PRERELEASE"
 ## main - main process
 ## monitor_achieved_rates - monitor network transfer rates
 ## maintain_log_file - maintain and rotate log file
-## log_file_waker - mark buffered log intervals
+## log_file_buffer_timer - trigger periodic log-buffer processing
 ##
 ## IPC is facilitated via FIFOs in the form of anonymous pipes
 ## thereby to enable transferring data between processes
@@ -117,9 +117,9 @@ cleanup_and_killall()
 	((terminate_maintain_log_file_timeout_ms=log_file_buffer_timeout_ms+500))
 	terminate "${proc_pids['maintain_log_file']:-}" \
 		"${terminate_maintain_log_file_timeout_ms}"
-	terminate "${proc_pids['log_file_waker']:-}"
+	terminate "${proc_pids['log_file_buffer_timer']:-}"
 
-	unset "proc_pids[maintain_log_file]" "proc_pids[log_file_waker]"
+	unset "proc_pids[maintain_log_file]" "proc_pids[log_file_buffer_timer]"
 
 	[[ -d ${run_path} ]] && rm -r "${run_path}"
 	rmdir /var/run/cake-autorate 2>/dev/null
@@ -363,7 +363,7 @@ flush_log_pipe()
 	done
 }
 
-log_file_waker()
+log_file_buffer_timer()
 {
 	trap '' INT
 	trap 'exit' TERM
@@ -1203,8 +1203,8 @@ then
 	exec {log_fd}<> <(:)
 	maintain_log_file &
 	proc_pids['maintain_log_file']=${!}
-	log_file_waker &
-	proc_pids['log_file_waker']=${!}
+	log_file_buffer_timer &
+	proc_pids['log_file_buffer_timer']=${!}
 fi
 
 # Redirect stdout to the log pipe when it is not being output directly
