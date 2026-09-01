@@ -139,6 +139,10 @@ log_file_buffer_timeout_ms=500 # log file buffer timeout in milliseconds
 
 log_file_export_compress=1 # compress log file exports using gzip and append .gz to export filename
 
+# interval in ms between writes of the per-instance status snapshot
+# (${run_path}/status.json, read by the LuCI app); 0 disables the status file
+status_file_interval_ms=1000
+
 ### In multi-homed setups, it is mandatory to use either ping_extra_args
 ### or ping_prefix_string to direct the pings through $dl_if and $ul_if.
 ### No universal recommendation exists, because there are multiple

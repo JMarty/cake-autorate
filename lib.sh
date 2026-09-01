@@ -180,6 +180,78 @@ terminate()
 	kill -KILL -- "${pids[@]}" 2> /dev/null
 }
 
+json_escape()
+{
+	# escape backslash and double quote for embedding in a JSON string
+	local s=${1//\\/\\\\}
+	printf '%s' "${s//\"/\\\"}"
+}
+
+# shellcheck disable=SC2154,SC2311
+# (SC2154: reads main-process globals defined in cake-autorate.sh, which
+# sources this file; SC2311: json_escape calls inside command substitution)
+build_status_json()
+{
+	# Print a JSON snapshot of this instance from the main process globals.
+	# Tolerates the arrays that are unset until the first rate/ping update.
+	local t_now_us=${EPOCHREALTIME/.} state list="" i
+	local dl_owd_ms ul_owd_ms dl_thr_ms ul_thr_ms dl_down_ms ul_down_ms
+
+	case ${main_state:-RUNNING} in
+		IDLE) state=idle ;;
+		STALL) state=stall ;;
+		*) state=running ;;
+	esac
+
+	for ((i=0; i < no_pingers && i < ${#reflectors[@]}; i++))
+	do
+		list+="${list:+,}\"$(json_escape "${reflectors[i]}")\""
+	done
+
+	printf -v dl_owd_ms '%.1f' "${avg_owd_delta_us[DL]:-0}e-3"
+	printf -v ul_owd_ms '%.1f' "${avg_owd_delta_us[UL]:-0}e-3"
+	printf -v dl_thr_ms '%.1f' "${compensated_owd_delta_delay_thr_us[DL]:-0}e-3"
+	printf -v ul_thr_ms '%.1f' "${compensated_owd_delta_delay_thr_us[UL]:-0}e-3"
+	printf -v dl_down_ms '%.1f' "${compensated_avg_owd_delta_max_adjust_down_thr_us[DL]:-0}e-3"
+	printf -v ul_down_ms '%.1f' "${compensated_avg_owd_delta_max_adjust_down_thr_us[UL]:-0}e-3"
+
+	printf '{"instance":"%s","version":"%s","pid":%d,"uptime_s":%d,"state":"%s","dl_if":"%s","ul_if":"%s",' \
+		"$(json_escape "${instance_id}")" "$(json_escape "${cake_autorate_version}")" "${BASHPID}" \
+		"$(( (t_now_us - t_process_start_us) / 1000000 ))" "${state}" \
+		"$(json_escape "${dl_if}")" "$(json_escape "${ul_if}")"
+	printf '"pinger_method":"%s","pingers_active":%d,"last_ping_age_ms":%d,' \
+		"$(json_escape "${pinger_method}")" "${pingers_active:-0}" "$(( (t_now_us - reflectors_last_timestamp_us) / 1000 ))"
+	printf '"dl":{"shaper_kbps":%d,"achieved_kbps":%d,"load":"%s","bufferbloat":%d,"avg_owd_delta_ms":%s,"delay_thr_ms":%s,"max_adjust_down_thr_ms":%s,"sum_delays":%d,"min_kbps":%d,"base_kbps":%d,"max_kbps":%d,"adjust":%d},' \
+		"${shaper_rate_kbps[DL]}" "${achieved_rate_kbps[DL]:-0}" "${load_state_name[${load_state[DL]:-0}]}" \
+		"${bufferbloat_detected[DL]:-0}" "${dl_owd_ms}" "${dl_thr_ms}" "${dl_down_ms}" "${sum_dl_delays:-0}" \
+		"${min_shaper_rate_kbps[DL]}" "${base_shaper_rate_kbps[DL]}" "${max_shaper_rate_kbps[DL]}" "${adjust_shaper_rate[DL]}"
+	printf '"ul":{"shaper_kbps":%d,"achieved_kbps":%d,"load":"%s","bufferbloat":%d,"avg_owd_delta_ms":%s,"delay_thr_ms":%s,"max_adjust_down_thr_ms":%s,"sum_delays":%d,"min_kbps":%d,"base_kbps":%d,"max_kbps":%d,"adjust":%d},' \
+		"${shaper_rate_kbps[UL]}" "${achieved_rate_kbps[UL]:-0}" "${load_state_name[${load_state[UL]:-0}]}" \
+		"${bufferbloat_detected[UL]:-0}" "${ul_owd_ms}" "${ul_thr_ms}" "${ul_down_ms}" "${sum_ul_delays:-0}" \
+		"${min_shaper_rate_kbps[UL]}" "${base_shaper_rate_kbps[UL]}" "${max_shaper_rate_kbps[UL]}" "${adjust_shaper_rate[UL]}"
+	printf '"reflectors":{"active":%d,"list":[%s]}}\n' "${i}" "${list}"
+}
+
+# shellcheck disable=SC2310
+# (SC2310: build_status_json's exit status intentionally gates the mv below)
+write_status_file()
+{
+	# Atomically replace ${run_path}/status.json (readers never see a partial file).
+	build_status_json > "${run_path}/status.json.tmp" && mv -f "${run_path}/status.json.tmp" "${run_path}/status.json"
+}
+
+# shellcheck disable=SC2154,SC2310,SC2311
+# (SC2154: instance_id/dl_if/ul_if are globals from cake-autorate.sh; SC2310/
+# SC2311: json_escape calls inside command substitution and && conditions)
+write_status_file_waiting()
+{
+	# Minimal status while waiting for interfaces, before the controller state exists.
+	printf '{"instance":"%s","version":"%s","pid":%d,"state":"waiting_for_if","dl_if":"%s","ul_if":"%s"}\n' \
+		"$(json_escape "${instance_id}")" "$(json_escape "${cake_autorate_version}")" "${BASHPID}" \
+		"$(json_escape "${dl_if}")" "$(json_escape "${ul_if}")" > "${run_path}/status.json.tmp" \
+		&& mv -f "${run_path}/status.json.tmp" "${run_path}/status.json"
+}
+
 if (( __set_e == 1 ))
 then
     set +e

@@ -876,6 +876,7 @@ verify_ifs_up()
 	do
 		[[ -f ${rx_bytes_path} ]] || log_msg "DEBUG" "Warning: The configured download interface: '${dl_if}' does not appear to be present. Waiting ${if_up_check_interval_s} seconds for the interface to come up."
 		[[ -f ${tx_bytes_path} ]] || log_msg "DEBUG" "Warning: The configured upload interface: '${ul_if}' does not appear to be present. Waiting ${if_up_check_interval_s} seconds for the interface to come up."
+		(( status_file_interval_ms > 0 )) && write_status_file_waiting
 		sleep_s "${if_up_check_interval_s}"
 	done
 }
@@ -1301,6 +1302,7 @@ printf -v high_load_thr_percent %.0f "${high_load_thr}e2"
 printf -v reflector_ping_interval_ms %.0f "${reflector_ping_interval_s}e3"
 printf -v reflector_ping_interval_us %.0f "${reflector_ping_interval_s}e6"
 printf -v reflector_health_check_interval_us %.0f "${reflector_health_check_interval_s}e6"
+printf -v status_file_interval_us %.0f "${status_file_interval_ms}e3"
 printf -v monitor_achieved_rates_interval_us %.0f "${monitor_achieved_rates_interval_ms}e3"
 printf -v monitor_cpu_usage_interval_us %.0f "${monitor_cpu_usage_interval_ms}e3"
 printf -v sustained_idle_sleep_thr_us %.0f "${sustained_idle_sleep_thr_s}e6"
@@ -1449,6 +1451,7 @@ t_last_bufferbloat_us[DL]=${t_start_us} t_last_bufferbloat_us[UL]=${t_start_us} 
 t_last_decay_us[DL]=${t_start_us} t_last_decay_us[UL]=${t_start_us} \
 t_last_reflector_health_check_us=${t_start_us} \
 t_sustained_connection_idle_us=0 t_last_connection_idle_us=${t_start_us} reflectors_last_timestamp_us=${t_start_us} \
+t_process_start_us=${t_start_us} t_last_status_file_write_us=0 \
 pingers_t_start_us=${t_start_us} t_last_reflector_replacement_us=${t_start_us} t_last_reflector_comparison_us=${t_start_us}
 
 for ((pinger=0; pinger < no_pingers; pinger++))
@@ -1471,6 +1474,8 @@ main_state="RUNNING"
 start_pingers
 
 log_msg "INFO" "Started cake-autorate with PID: ${BASHPID} and config: ${config_path}"
+
+(( status_file_interval_us > 0 )) && write_status_file
 
 while :
 do
@@ -2137,4 +2142,10 @@ do
 			exit 1
 			;;
 	esac
+
+	if (( status_file_interval_us > 0 && t_start_us > t_last_status_file_write_us + status_file_interval_us ))
+	then
+		write_status_file
+		t_last_status_file_write_us=${t_start_us}
+	fi
 done
