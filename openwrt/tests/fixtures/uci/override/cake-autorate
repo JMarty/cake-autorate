@@ -1,0 +1,10 @@
+config global 'global'
+	option no_pingers '4'
+	option log_to_file '0'
+
+config instance 'a'
+	option enabled '1'
+	option dl_if 'ifb4a'
+	option ul_if 'a'
+	option no_pingers '3'
+	option reflectors '9.9.9.9'
