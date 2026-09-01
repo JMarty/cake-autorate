@@ -121,7 +121,8 @@ cleanup_and_killall()
 
 	unset "proc_pids[maintain_log_file]" "proc_pids[log_file_buffer_timer]"
 
-	[[ -d ${run_path} ]] && rm -r "${run_path}"
+	# Only remove the per-instance run dir; before instance_id is known run_path is the shared parent.
+	[[ -n ${instance_id:-} && -d ${run_path} ]] && rm -r "${run_path}"
 	rmdir /var/run/cake-autorate 2>/dev/null
 
 	# give some time for processes to gracefully exit
@@ -978,6 +979,17 @@ fi
 type logger &> /dev/null && use_logger=1 || use_logger=0 # only perform the test once.
 ((systemd_service)) && use_logger=0
 
+# --check-config <path>: validate the config file, print problems, exit 0/1.
+# Nothing is started, no run dir or log file is created.
+check_config_only=0
+if [[ ${1-} == "--check-config" ]]
+then
+	check_config_only=1
+	shift
+	log_to_file=0 print_to_stdout=1 use_logger=0
+	trap - INT TERM EXIT
+fi
+
 log_file_path=/var/log/cake-autorate.log
 
 # *** WARNING: take great care if attempting to alter the run_path! ***
@@ -1040,6 +1052,12 @@ then
 	exit 1
 fi
 unset valid_config_entries user_config config_error_count key
+
+if ((check_config_only))
+then
+	printf 'Config file %s is valid.\n' "${config_path}"
+	exit 0
+fi
 
 # shellcheck source=config.primary.sh
 . "${config_path}"
