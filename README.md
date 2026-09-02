@@ -9,6 +9,61 @@ bandwidth connections such as LTE, Starlink, and cable modems and is
 not generally required for use on connections that have a stable,
 fixed bandwidth.
 
+## About this fork
+
+This repository is a fork of
+[lynxthecat/cake-autorate](https://github.com/lynxthecat/cake-autorate).
+All credit for the rate-control algorithm, the measurement engine and
+the original scripts goes to
+[@lynxthecat](https://github.com/lynxthecat) and the upstream
+contributors ([@rany2](https://github.com/rany2),
+[@moeller0](https://github.com/moeller0),
+[@richb-hanover](https://github.com/richb-hanover) and others). The
+upstream algorithm is untouched here — this fork wraps it in native
+OpenWrt integration so that it can be installed as a package and,
+eventually, managed entirely from the LuCI web interface.
+
+What this fork adds on top of upstream:
+
+- **Native OpenWrt package** (`cake-autorate`): installable `.apk`
+  (OpenWrt 25.12+) and `.ipk` (OpenWrt 24.10) built by CI and attached
+  to the [Releases](../../releases) page — no more manual `setup.sh`
+  copying on OpenWrt.
+- **UCI configuration** (`/etc/config/cake-autorate`) as the single
+  source of truth: one `instance` section per WAN, option names
+  identical to the `defaults.sh` variables, reflectors as `list`
+  entries.
+- **True multi-instance service**: one procd instance per configured
+  WAN. `service cake-autorate stop <id>` stops a single instance, and
+  editing one instance's settings restarts only that instance —
+  designed for multi-WAN (e.g. mwan3) setups, while single-WAN works
+  out of the box.
+- **Machine-readable live status**: each instance writes
+  `/var/run/cake-autorate/<id>/status.json` (shaper and achieved rates,
+  OWD deltas, load state, reflectors, uptime) about once a second.
+- **ubus/rpcd API** (`ubus call cake-autorate status`, plus instance
+  control, config validation, log tail/export/reset, SQM and mwan3
+  discovery, MQTT status) — the backend for the upcoming
+  `luci-app-cake-autorate` web interface, and useful from the CLI
+  today.
+- **Config validation** (`cake-autorate.sh --check-config <file>`)
+  so bad settings are rejected before they restart a running instance.
+- **Automatic migration** of existing `setup.sh`-style installs
+  (`/root/cake-autorate/config.*.sh`) into UCI on first package
+  install, including MQTT publisher credentials.
+- **MQTT publisher as a service** configured from UCI (Home Assistant
+  discovery supported by the upstream publisher).
+- **CI**: shellcheck + an 87-test suite + OpenWrt SDK package builds
+  for every push, releases built from tags.
+
+A LuCI web interface (`luci-app-cake-autorate`: live graphs,
+per-instance control, SQM integration) is under active development.
+
+On OpenWrt, install from the [Releases](../../releases) page — see
+[INSTALLATION](./INSTALLATION.md#installation-as-an-openwrt-package-recommended-on-openwrt).
+Asus Merlin and Debian users: this fork does not change the upstream
+`setup.sh` flow; follow the upstream instructions below.
+
 [CAKE](https://www.bufferbloat.net/projects/codel/wiki/Cake/) is an
 algorithm that manages the buffering of data being sent/received by a
 device so that no more
