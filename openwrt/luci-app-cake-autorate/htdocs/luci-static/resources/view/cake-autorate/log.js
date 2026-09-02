@@ -186,9 +186,10 @@ return view.extend({
 		});
 		this.typeSelect = typeSelect;
 
-		/* re-filter/re-render the already-fetched lines without a new RPC
-		 * round trip; the type select's change handler calls this instead
-		 * of refresh(). Cheap since res.lines is small (<= 2000 entries). */
+		/* type-filter change refetches via logTail -- simplest correct
+		 * behaviour; the filter also applies client-side when rendering the
+		 * response (see filterLines()). No client-side caching of the last
+		 * response is done here. */
 		typeSelect.addEventListener('change', ui.createHandlerFn(this, function() {
 			return self.refresh();
 		}));
