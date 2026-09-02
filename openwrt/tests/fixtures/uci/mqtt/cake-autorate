@@ -1,0 +1,6 @@
+config mqtt 'mqtt'
+	option enabled '1'
+	option host 'broker.lan'
+	option port '1884'
+	option user 'ha'
+	option password 'p"a$s'

@@ -1,0 +1,58 @@
+#!/bin/sh /etc/rc.common
+# mqtt-publisher: publish cake-autorate SUMMARY/CPU stats to an MQTT broker (Home Assistant discovery).
+# Configured by the 'mqtt' section of /etc/config/cake-autorate.
+# shellcheck disable=SC2034
+USE_PROCD=1
+START=98
+STOP=10
+
+SCRIPT_PREFIX="${CAKE_AUTORATE_SCRIPT_PREFIX:-/usr/lib/cake-autorate}"
+CONFIG_PREFIX="${CAKE_AUTORATE_CONFIG_PREFIX:-/var/etc/cake-autorate}"
+
+sh_escape() {
+	# make a value safe inside double quotes in a sourced shell file
+	printf '%s' "$1" | sed -e 's/[\\"$`]/\\&/g'
+}
+
+start_service() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local enabled host port user password cfg
+
+	config_load cake-autorate
+	config_get_bool enabled mqtt enabled 0
+	[ "$enabled" -eq 1 ] || return 0
+	config_get host mqtt host
+	config_get port mqtt port 1883
+	config_get user mqtt user
+	config_get password mqtt password
+	if [ -z "$host" ]; then
+		logger -t mqtt-publisher "no MQTT host configured, not starting"
+		return 1
+	fi
+
+	mkdir -p "$CONFIG_PREFIX"
+	cfg="$CONFIG_PREFIX/mqtt-publisher.config.sh"
+	(
+		umask 077
+		printf 'MQTT_HOST="%s"\nMQTT_PORT="%s"\nMQTT_USER="%s"\nMQTT_PASS="%s"\n' \
+			"$(sh_escape "$host")" "$(sh_escape "$port")" "$(sh_escape "$user")" "$(sh_escape "$password")" > "$cfg.tmp"
+	)
+	mv -f "$cfg.tmp" "$cfg"
+
+	procd_open_instance ""
+	procd_set_param command "$SCRIPT_PREFIX/mqtt-publisher.sh"
+	procd_set_param env CAKE_AUTORATE_CONFIG_PREFIX="$CONFIG_PREFIX"
+	procd_set_param file "$cfg"
+	# retry forever: the publisher exits when no instance log exists yet
+	procd_set_param respawn 3600 10 0
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+reload_service() {
+	restart
+}
+
+service_triggers() {
+	procd_add_reload_trigger cake-autorate
+}
