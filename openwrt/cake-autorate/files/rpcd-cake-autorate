@@ -165,7 +165,7 @@ do_check_config() {
 
 do_log_tail() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id lines path size line
+	local id lines path size line tmpf
 	json_load "$INPUT"
 	json_get_var id id
 	json_get_var lines lines
@@ -179,12 +179,14 @@ do_log_tail() {
 	if [ -f "$path" ]; then
 		size=$(wc -c < "$path")
 		json_add_int size "$size"
+		tmpf=$(mktemp)
+		tail -n "$lines" "$path" > "$tmpf"
 		json_add_array lines
-		IFS='
-'
-		for line in $(tail -n "$lines" "$path"); do json_add_string "" "$line"; done
-		unset IFS
+		while IFS= read -r line; do
+			json_add_string "" "$line"
+		done < "$tmpf"
 		json_close_array
+		rm -f "$tmpf"
 	else
 		json_add_int size 0
 		json_add_array lines
