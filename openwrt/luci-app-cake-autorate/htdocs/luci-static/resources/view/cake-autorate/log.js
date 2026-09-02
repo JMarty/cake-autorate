@@ -10,7 +10,10 @@
  * with a lines cap, a client-side record-type filter and optional 5s
  * auto-refresh. Reset truncates the file (after confirmation); Export
  * downloads the gzip-compressed export produced by `cake-autorate log_export`
- * via the ubus `file read` call (base64-decoded into a Blob).
+ * via the ubus `file read` call, explicitly requesting base64 (base64-decoded
+ * into a Blob). ubus file.read returns the raw file body unless base64=true
+ * is passed; a falsy/empty reply -- e.g. the file exceeds the ubus file-read
+ * size limit -- is reported rather than decoded.
  */
 
 var LINE_OPTIONS = [100, 500, 2000];
@@ -131,9 +134,17 @@ return view.extend({
 				return;
 			}
 
-			return api.callFileRead(res.path).then(function(data) {
+			/* Explicitly request base64: ubus `file read` returns the raw file
+			 * body by default and only base64-encodes the reply when this
+			 * param is true -- decoding a raw (non-base64) gzip body with
+			 * atob() would throw on every export. */
+			return api.callFileRead(res.path, true).then(function(data) {
+				if (!data) {
+					ui.addNotification(null, E('p', {}, _('Export succeeded on the router (%s) but the file could not be downloaded — it may exceed the 256 KiB ubus file-read limit. Fetch it over SSH/SCP.').format(res.path)), 'error');
+					return;
+				}
 				try {
-					var bytes = base64ToBytes(data || '');
+					var bytes = base64ToBytes(data);
 					var blob = new Blob([ bytes ], { type: 'application/gzip' });
 					var url = URL.createObjectURL(blob);
 					var link = E('a', { 'href': url, 'download': basename(res.path) });

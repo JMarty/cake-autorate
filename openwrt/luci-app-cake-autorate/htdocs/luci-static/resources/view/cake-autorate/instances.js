@@ -349,7 +349,12 @@ return view.extend({
 
 		/* probe_routing: UI-only synthetic option derived from ping_prefix_string
 		 * / ping_extra_args. write()/remove() are no-ops; onchange pushes the
-		 * chosen value into the real fields in the open modal. */
+		 * chosen value into the real fields in the open modal. ping_prefix_string
+		 * and ping_extra_args stay always-visible (no depends) -- an option whose
+		 * depends is unsatisfied at parse time is inactive and gets stripped from
+		 * UCI on save, which would silently delete an existing mwan3/custom prefix
+		 * whenever the modal was reopened and saved with routing set to something
+		 * else. */
 		var oProbe = s.taboption('pinger', form.ListValue, 'probe_routing', _('Probe routing'),
 			_('How ping probes are routed out through this WAN. Required for correct latency measurement on multi-WAN setups.'));
 		oProbe.modalonly = true;
@@ -375,23 +380,27 @@ return view.extend({
 		};
 		oProbe.onchange = function(ev, section_id, value) {
 			var prefixOpt = this.map.lookupOption('ping_prefix_string', section_id);
-			if (!prefixOpt || !prefixOpt[0]) return;
-			var input = prefixOpt[0].getUIElement(section_id);
-			if (!input) return;
-			if (value === 'none' || value === 'custom') {
-				input.setValue('');
+			var extraOpt = this.map.lookupOption('ping_extra_args', section_id);
+			var prefixInput = (prefixOpt && prefixOpt[0]) ? prefixOpt[0].getUIElement(section_id) : null;
+			var extraInput = (extraOpt && extraOpt[0]) ? extraOpt[0].getUIElement(section_id) : null;
+			if (value === 'none') {
+				/* Clear both fields -- 'none' means no routing prefix/args apply. */
+				if (prefixInput) prefixInput.setValue('');
+				if (extraInput) extraInput.setValue('');
 			} else if (value.indexOf('mwan3:') === 0) {
-				input.setValue('mwan3 use ' + value.substring(6) + ' exec');
+				if (prefixInput) prefixInput.setValue('mwan3 use ' + value.substring(6) + ' exec');
 			}
-			if (typeof input.triggerValidation === 'function')
-				input.triggerValidation();
+			/* 'custom' touches neither field -- the user's existing values stand. */
+			if (prefixInput && typeof prefixInput.triggerValidation === 'function')
+				prefixInput.triggerValidation();
+			if (extraInput && typeof extraInput.triggerValidation === 'function')
+				extraInput.triggerValidation();
 		};
 
 		opt(s, 'pinger', form.Value, 'ping_prefix_string', _('Ping prefix string'), {
-			depends: { probe_routing: 'custom' },
 			description: _('e.g. "mwan3 use <iface> exec" works with fping/ping; irtt/tsping need ping_extra_args or fwmark-based routing instead.')
 		});
-		opt(s, 'pinger', form.Value, 'ping_extra_args', _('Ping extra args'), { depends: { probe_routing: 'custom' } });
+		opt(s, 'pinger', form.Value, 'ping_extra_args', _('Ping extra args'));
 
 		/* ══════════════════════════════ thresholds ══════════════════════════════ */
 

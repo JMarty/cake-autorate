@@ -53,8 +53,8 @@ What this fork adds on top of upstream:
   install, including MQTT publisher credentials.
 - **MQTT publisher as a service** configured from UCI (Home Assistant
   discovery supported by the upstream publisher).
-- **CI**: shellcheck + an 87-test suite + OpenWrt SDK package builds
-  for every push, releases built from tags.
+- **CI**: shellcheck + a 100-assertion test suite + OpenWrt SDK package
+  builds for every push, releases built from tags.
 
 The **luci-app-cake-autorate** package adds the web interface: live
 per-instance status with rolling bandwidth/latency charts, full

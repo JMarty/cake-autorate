@@ -14,7 +14,11 @@ var callSqmCreate = rpc.declare({ object: 'cake-autorate', method: 'sqm_create',
 var callSqmSyncRates = rpc.declare({ object: 'cake-autorate', method: 'sqm_sync_rates', params: ['sqm_id', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
 var callMqttStatus = rpc.declare({ object: 'cake-autorate', method: 'mqtt_status', expect: { '': {} } });
 var callInitAction = rpc.declare({ object: 'luci', method: 'setInitAction', params: ['name', 'action'], expect: { result: false } });
-var callFileRead = rpc.declare({ object: 'file', method: 'read', params: ['path'], expect: { data: '' } });
+/* ubus file.read returns the raw file body unless base64 is explicitly
+ * requested, in which case the reply is base64-encoded -- callers that need
+ * to decode the data (e.g. Blob download of a binary/gzip file) must pass
+ * base64=true and decode with atob(). */
+var callFileRead = rpc.declare({ object: 'file', method: 'read', params: ['path', 'base64'], expect: { data: '' } });
 
 return baseclass.extend({
 	getStatus: callStatus,
