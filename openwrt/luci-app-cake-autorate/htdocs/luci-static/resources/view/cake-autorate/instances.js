@@ -41,7 +41,7 @@ var defaults = {};
  * in `extra`.
  */
 function opt(s, tab, widget, name, title, extra) {
-	var o = s.taboption(tab, widget, name, title);
+	var o = tab ? s.taboption(tab, widget, name, title) : s.option(widget, name, title);
 	var d = defaults[name];
 	if (d && !d.list) {
 		o.placeholder = d.value;
@@ -118,9 +118,10 @@ return view.extend({
 		opt(gs, null, form.Flag, 'log_to_file', _('Log to file'), { modalonly: false });
 		opt(gs, null, form.Value, 'log_file_max_time_mins', _('Log file max time (mins)'), { datatype: 'uinteger', modalonly: false });
 		opt(gs, null, form.Value, 'log_file_max_size_KB', _('Log file max size (KB)'), { datatype: 'uinteger', modalonly: false });
-		/* taboption(null, ...) on a section with no registered tabs behaves
-		 * exactly like section.option(...) -- lets opt() be reused as-is
-		 * for both the untabbed global section and the tabbed grid below. */
+		/* opt() branches to s.option(...) when tab is null/falsy -- LuCI's
+		 * AbstractSection.taboption() throws ReferenceError for an
+		 * unregistered tab, so a bare taboption(null, ...) call on this
+		 * untabbed NamedSection would crash the whole page. */
 
 		/* ── Instances grid ───────────────────────────────────────── */
 		var s = m.section(form.GridSection, 'instance', _('Instances'));
