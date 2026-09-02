@@ -1,0 +1,420 @@
+#!/bin/sh
+# rpcd plugin: ubus object "cake-autorate" for the LuCI app (and for `ubus call` on the CLI).
+# shellcheck disable=SC1091
+. /usr/share/libubox/jshn.sh
+. /lib/functions.sh
+. /lib/functions/network.sh
+
+RUN_DIR=/var/run/cake-autorate
+INIT=/etc/init.d/cake-autorate
+SCRIPT_PREFIX=/usr/lib/cake-autorate
+
+reply_error() {
+	json_init
+	json_add_boolean ok 0
+	json_add_string error "$1"
+	json_dump
+	exit 0
+}
+
+valid_id() {
+	case "$1" in ''|*[!A-Za-z0-9_]*) return 1 ;; *) ;; esac
+	[ "$(uci -q get "cake-autorate.$1")" = "instance" ]
+}
+
+valid_number() {
+	case "$1" in ''|*[!0-9]*) return 1 ;; *) ;; esac
+}
+
+json_str() {
+	# JSON-escape backslash and double quote, drop control characters (for hand-built JSON)
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t'
+}
+
+log_path_for() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local dir
+	dir=$(uci -q get "cake-autorate.$1.log_file_path_override")
+	[ -n "$dir" ] || dir=$(uci -q get cake-autorate.global.log_file_path_override)
+	[ -n "$dir" ] && [ -d "$dir" ] || dir=/var/log
+	printf '%s/cake-autorate.%s.log' "$dir" "$1"
+}
+
+cake_info() {
+	# prints "<present 0|1> <bandwidth_kbps>" for the root qdisc of a device
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local out kind bw
+	out=$(tc -j qdisc show dev "$1" 2>/dev/null) || { printf '0 0'; return; }
+	kind=$(printf '%s' "$out" | jsonfilter -q -e '@[0].kind')
+	[ "$kind" = "cake" ] || { printf '0 0'; return; }
+	bw=$(printf '%s' "$out" | jsonfilter -q -e '@[0].options.bandwidth')
+	valid_number "$bw" || bw=0
+	printf '1 %d' $((bw * 8 / 1000))
+}
+
+# ---- status ---------------------------------------------------------------
+
+status_instance() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id="$1" enabled running pid exit_code sfile spid stale=0 dl_if ul_if
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local dl_present dl_bw ul_present ul_bw
+	config_get_bool enabled "$id" enabled 0
+	running=$(printf '%s' "$SVC" | jsonfilter -q -e "@['cake-autorate'].instances['$id'].running")
+	pid=$(printf '%s' "$SVC" | jsonfilter -q -e "@['cake-autorate'].instances['$id'].pid")
+	exit_code=$(printf '%s' "$SVC" | jsonfilter -q -e "@['cake-autorate'].instances['$id'].exit_code")
+	[ "$running" = "true" ] && running=true || running=false
+	valid_number "$pid" || pid=0
+	valid_number "$exit_code" || exit_code=0
+	config_get dl_if "$id" dl_if
+	config_get ul_if "$id" ul_if
+
+	printf '%s"%s":{"enabled":%s,"running":%s,"pid":%d,"exit_code":%d' "$SEP" "$id" \
+		"$([ "$enabled" -eq 1 ] && echo true || echo false)" "$running" "$pid" "$exit_code"
+	SEP=","
+
+	sfile="$RUN_DIR/$id/status.json"
+	if [ -r "$sfile" ]; then
+		spid=$(jsonfilter -q -i "$sfile" -e '@.pid')
+		valid_number "$spid" && [ ! -d "/proc/$spid" ] && stale=1
+		printf ',"stale":%s,"status":%s' "$([ $stale -eq 1 ] && echo true || echo false)" "$(cat "$sfile")"
+	else
+		printf ',"stale":false,"status":null'
+	fi
+
+	# shellcheck disable=SC2046  # intentional word split of "present bw"
+	set -- $(cake_info "$dl_if"); dl_present=$1; dl_bw=$2
+	# shellcheck disable=SC2046
+	set -- $(cake_info "$ul_if"); ul_present=$1; ul_bw=$2
+	printf ',"cake_present":{"dl":%s,"ul":%s},"tc_bandwidth_kbps":{"dl":%d,"ul":%d}}' \
+		"$([ "$dl_present" = 1 ] && echo true || echo false)" \
+		"$([ "$ul_present" = 1 ] && echo true || echo false)" "$dl_bw" "$ul_bw"
+}
+
+do_status() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local version enabled
+	SVC=$(ubus call service list '{"name":"cake-autorate","verbose":true}' 2>/dev/null)
+	version=$(sed -n 's/^cake_autorate_version="\(.*\)"/\1/p' "$SCRIPT_PREFIX/cake-autorate.sh")
+	"$INIT" enabled && enabled=true || enabled=false
+	config_load cake-autorate
+	printf '{"ok":true,"service_enabled":%s,"version":"%s","instances":{' "$enabled" "$(json_str "$version")"
+	SEP=""
+	config_foreach status_instance instance
+	printf '}}\n'
+}
+
+# ---- control / config -----------------------------------------------------
+
+do_instance_control() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id action enabled
+	json_load "$INPUT"
+	json_get_var id id
+	json_get_var action action
+	valid_id "$id" || reply_error "invalid instance id"
+	case "$action" in
+		stop)
+			"$INIT" stop "$id" ;;
+		start)
+			config_load cake-autorate
+			config_get_bool enabled "$id" enabled 0
+			[ "$enabled" -eq 1 ] || reply_error "instance '$id' is disabled; enable it in the configuration first"
+			"$INIT" reload ;;
+		restart)
+			"$INIT" stop "$id"
+			"$INIT" reload ;;
+		*)
+			reply_error "invalid action" ;;
+	esac
+	json_init
+	json_add_boolean ok 1
+	json_add_string msg "$action requested for instance '$id'"
+	json_dump
+}
+
+do_check_config() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id tmp out rc line errs
+	json_load "$INPUT"
+	json_get_var id id
+	valid_id "$id" || reply_error "invalid instance id"
+	tmp=$(mktemp)
+	if ! out=$("$SCRIPT_PREFIX/uci-to-config.sh" "$id" "$tmp" 2>&1); then
+		rm -f "$tmp"
+		reply_error "$out"
+	fi
+	out=$(CAKE_AUTORATE_SCRIPT_PREFIX="$SCRIPT_PREFIX" CAKE_AUTORATE_CONFIG_PREFIX=/var/etc/cake-autorate \
+		"$SCRIPT_PREFIX/cake-autorate.sh" --check-config "$tmp" 2>&1); rc=$?
+	rm -f "$tmp"
+	json_init
+	json_add_boolean ok 1
+	json_add_boolean valid "$([ $rc -eq 0 ] && echo 1 || echo 0)"
+	# no pipe into the loop: a piped `while` runs in a subshell in ash and would lose the json_add_string calls
+	errs=$(printf '%s\n' "$out" | sed -n 's/^ERROR; [^;]*; [^;]*; //p')
+	json_add_array errors
+	IFS='
+'
+	for line in $errs; do json_add_string "" "$line"; done
+	unset IFS
+	json_close_array
+	json_dump
+}
+
+# ---- logs -----------------------------------------------------------------
+
+do_log_tail() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id lines path size line
+	json_load "$INPUT"
+	json_get_var id id
+	json_get_var lines lines
+	valid_id "$id" || reply_error "invalid instance id"
+	valid_number "$lines" || lines=200
+	[ "$lines" -le 2000 ] || lines=2000
+	path=$(log_path_for "$id")
+	json_init
+	json_add_boolean ok 1
+	json_add_string path "$path"
+	if [ -f "$path" ]; then
+		size=$(wc -c < "$path")
+		json_add_int size "$size"
+		json_add_array lines
+		IFS='
+'
+		for line in $(tail -n "$lines" "$path"); do json_add_string "" "$line"; done
+		unset IFS
+		json_close_array
+	else
+		json_add_int size 0
+		json_add_array lines
+		json_close_array
+	fi
+	json_dump
+}
+
+do_log_export() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id helper out path
+	json_load "$INPUT"
+	json_get_var id id
+	valid_id "$id" || reply_error "invalid instance id"
+	helper="$RUN_DIR/$id/log_file_export"
+	[ -x "$helper" ] || reply_error "instance '$id' is not running with log_to_file=1"
+	out=$("$helper" 30 2>&1) || reply_error "$out"
+	path=$(printf '%s\n' "$out" | sed -n 's/^Log file available at location: //p')
+	[ -n "$path" ] || reply_error "export did not report a file: $out"
+	json_init
+	json_add_boolean ok 1
+	json_add_string path "$path"
+	json_dump
+}
+
+do_log_reset() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id helper out
+	json_load "$INPUT"
+	json_get_var id id
+	valid_id "$id" || reply_error "invalid instance id"
+	helper="$RUN_DIR/$id/log_file_reset"
+	[ -x "$helper" ] || reply_error "instance '$id' is not running with log_to_file=1"
+	out=$("$helper" 2>&1) || reply_error "$out"
+	json_init
+	json_add_boolean ok 1
+	json_dump
+}
+
+# ---- system info / SQM ----------------------------------------------------
+
+sqm_entry() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id="$1" iface qdisc script enabled download upload
+	config_get iface "$id" interface
+	config_get qdisc "$id" qdisc
+	config_get script "$id" script
+	config_get_bool enabled "$id" enabled 0
+	config_get download "$id" download 0
+	config_get upload "$id" upload 0
+	json_add_object ""
+	json_add_string id "$id"
+	json_add_string interface "$iface"
+	json_add_string qdisc "$qdisc"
+	json_add_string script "$script"
+	json_add_boolean enabled "$enabled"
+	json_add_int download "${download:-0}"
+	json_add_int upload "${upload:-0}"
+	json_add_string ifb "ifb4$iface"
+	json_close_object
+}
+
+mwan3_entry() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local name="$1" dev
+	network_get_device dev "$name"
+	json_add_object ""
+	json_add_string name "$name"
+	json_add_string device "${dev:-}"
+	json_close_object
+}
+
+fping_ts_available() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local v major minor
+	v=$(fping -v 2>/dev/null | sed -n 's/.*Version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
+	# shellcheck disable=SC2046  # intentional word split of fping version output
+	set -- $v
+	major=${1:-0}; minor=${2:-0}
+	[ "$major" -gt 5 ] || { [ "$major" -eq 5 ] && [ "$minor" -ge 3 ]; }
+}
+
+do_system_info() {
+	json_init
+	json_add_boolean ok 1
+	if [ -f /etc/config/sqm ]; then
+		json_add_boolean sqm_installed 1
+		json_add_array sqm
+		config_load sqm
+		config_foreach sqm_entry queue
+		json_close_array
+	else
+		json_add_boolean sqm_installed 0
+		json_add_array sqm; json_close_array
+	fi
+	if [ -f /etc/config/mwan3 ]; then
+		json_add_boolean mwan3_installed 1
+		json_add_array mwan3
+		config_load mwan3
+		config_foreach mwan3_entry interface
+		json_close_array
+	else
+		json_add_boolean mwan3_installed 0
+		json_add_array mwan3; json_close_array
+	fi
+	json_add_object pingers
+	json_add_boolean fping "$(command -v fping >/dev/null && echo 1 || echo 0)"
+	json_add_boolean fping_ts "$(fping_ts_available && echo 1 || echo 0)"
+	json_add_boolean tsping "$(command -v tsping >/dev/null && echo 1 || echo 0)"
+	json_add_boolean irtt "$(command -v irtt >/dev/null && echo 1 || echo 0)"
+	json_add_boolean ping "$(ping -V 2>&1 | grep -q iputils && echo 1 || echo 0)"
+	json_close_object
+	json_add_boolean mosquitto_installed "$(command -v mosquitto_pub >/dev/null && echo 1 || echo 0)"
+	json_dump
+}
+
+do_sqm_create() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local iface dl ul id
+	json_load "$INPUT"
+	json_get_var iface interface
+	json_get_var dl dl_kbps
+	json_get_var ul ul_kbps
+	case "$iface" in ''|*[!A-Za-z0-9_.-]*) reply_error "invalid interface" ;; *) ;; esac
+	# shellcheck disable=SC2015  # both sides are pure '[ ]' tests; reply_error (which exits) is the desired branch whenever either fails
+	valid_number "$dl" && valid_number "$ul" || reply_error "rates must be integers (kbit/s)"
+	[ -f /etc/config/sqm ] || reply_error "sqm-scripts is not installed"
+	id=$(printf '%s' "$iface" | tr -c 'A-Za-z0-9_' '_')
+	[ "$(uci -q get "sqm.$id")" = "queue" ] && reply_error "SQM instance '$id' already exists"
+	uci -q batch <<-EOF
+		set sqm.$id=queue
+		set sqm.$id.interface='$iface'
+		set sqm.$id.enabled='1'
+		set sqm.$id.qdisc='cake'
+		set sqm.$id.script='piece_of_cake.qos'
+		set sqm.$id.download='$dl'
+		set sqm.$id.upload='$ul'
+		set sqm.$id.linklayer='none'
+		set sqm.$id.debug_logging='0'
+		set sqm.$id.verbosity='5'
+		commit sqm
+	EOF
+	/etc/init.d/sqm reload >/dev/null 2>&1
+	json_init
+	json_add_boolean ok 1
+	json_add_string sqm_id "$id"
+	json_dump
+}
+
+do_sqm_sync_rates() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id dl ul
+	json_load "$INPUT"
+	json_get_var id sqm_id
+	json_get_var dl dl_kbps
+	json_get_var ul ul_kbps
+	case "$id" in ''|*[!A-Za-z0-9_]*) reply_error "invalid sqm id" ;; *) ;; esac
+	[ "$(uci -q get "sqm.$id")" = "queue" ] || reply_error "no SQM instance '$id'"
+	# shellcheck disable=SC2015  # both sides are pure '[ ]' tests; reply_error (which exits) is the desired branch whenever either fails
+	valid_number "$dl" && valid_number "$ul" || reply_error "rates must be integers (kbit/s)"
+	uci -q set "sqm.$id.download=$dl"
+	uci -q set "sqm.$id.upload=$ul"
+	uci -q commit sqm
+	/etc/init.d/sqm reload >/dev/null 2>&1
+	json_init
+	json_add_boolean ok 1
+	json_dump
+}
+
+# ---- mqtt -----------------------------------------------------------------
+
+summary_enabled_instance() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id="$1" v
+	config_get v "$id" output_summary_stats
+	[ -n "$v" ] || config_get v global output_summary_stats 0
+	[ "$v" = "1" ] && json_add_string "" "$id"
+}
+
+do_mqtt_status() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local running host
+	running=$(ubus call service list '{"name":"mqtt-publisher"}' 2>/dev/null | jsonfilter -q -e '@["mqtt-publisher"].instances.instance1.running')
+	config_load cake-autorate
+	config_get host mqtt host
+	json_init
+	json_add_boolean ok 1
+	json_add_boolean running "$([ "$running" = "true" ] && echo 1 || echo 0)"
+	json_add_boolean configured "$([ -n "$host" ] && echo 1 || echo 0)"
+	json_add_boolean mosquitto_installed "$(command -v mosquitto_pub >/dev/null && echo 1 || echo 0)"
+	json_add_array summary_stats_enabled_instances
+	config_foreach summary_enabled_instance instance
+	json_close_array
+	json_dump
+}
+
+# ---- dispatch -------------------------------------------------------------
+
+case "$1" in
+	list)
+		cat <<-'EOF'
+		{
+		  "status": {},
+		  "instance_control": { "id": "str", "action": "str" },
+		  "check_config": { "id": "str" },
+		  "log_tail": { "id": "str", "lines": 0 },
+		  "log_export": { "id": "str" },
+		  "log_reset": { "id": "str" },
+		  "system_info": {},
+		  "sqm_create": { "interface": "str", "dl_kbps": 0, "ul_kbps": 0 },
+		  "sqm_sync_rates": { "sqm_id": "str", "dl_kbps": 0, "ul_kbps": 0 },
+		  "mqtt_status": {}
+		}
+		EOF
+		;;
+	call)
+		read -r INPUT
+		case "$2" in
+			status)           do_status ;;
+			instance_control) do_instance_control ;;
+			check_config)     do_check_config ;;
+			log_tail)         do_log_tail ;;
+			log_export)       do_log_export ;;
+			log_reset)        do_log_reset ;;
+			system_info)      do_system_info ;;
+			sqm_create)       do_sqm_create ;;
+			sqm_sync_rates)   do_sqm_sync_rates ;;
+			mqtt_status)      do_mqtt_status ;;
+			*)                reply_error "unknown method" ;;
+		esac
+		;;
+	*) ;;
+esac
