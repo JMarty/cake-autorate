@@ -137,6 +137,12 @@ bandwidth or somewhere close thereto (e.g. the compromise bandwidth).
 Read the installation instructions in the separate
 [INSTALLATION](./INSTALLATION.md) page.
 
+On OpenWrt, the recommended route is the prebuilt package
+(`cake-autorate` plus the forthcoming `luci-app-cake-autorate`) from this
+fork's Releases page, installable with `apk`/`opkg` and configured via
+`/etc/config/cake-autorate` — see
+[Installation as an OpenWrt package](./INSTALLATION.md#installation-as-an-openwrt-package-recommended-on-openwrt).
+
 ## Analysis of the cake-autorate logs
 
 cake-autorate maintains a detailed log file that is helpful in

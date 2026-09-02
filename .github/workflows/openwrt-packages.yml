@@ -1,0 +1,59 @@
+name: OpenWrt packages
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: shellcheck + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck jq
+      - name: shellcheck (bash scripts)
+        run: shellcheck -x openwrt/cake-autorate/files/uci-to-config.sh openwrt/cake-autorate/files/migrate-legacy-config.sh
+      - name: shellcheck (sh scripts)
+        run: shellcheck -s sh -e SC1091 openwrt/cake-autorate/files/cake-autorate.init openwrt/cake-autorate/files/mqtt-publisher.init openwrt/cake-autorate/files/cake-autorate.defaults openwrt/cake-autorate/files/rpcd-cake-autorate
+      - name: unit tests
+        run: bash openwrt/tests/run-tests.sh
+
+  build:
+    name: build ${{ matrix.version }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['24.10.0', '25.12.0']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the OpenWrt SDK
+        uses: openwrt/gh-action-sdk@main
+        env:
+          ARCH: x86_64-${{ matrix.version }}
+          FEEDNAME: cakeautorate
+          PACKAGES: cake-autorate
+          IGNORE_ERRORS: 0
+      - name: Collect packages
+        run: |
+          mkdir -p dist
+          find bin/packages -type f \( -name 'cake-autorate*.ipk' -o -name 'cake-autorate*.apk' -o -name 'luci-app-cake-autorate*.ipk' -o -name 'luci-app-cake-autorate*.apk' \) -exec cp {} dist/ \;
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.version }}
+          path: dist/*
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

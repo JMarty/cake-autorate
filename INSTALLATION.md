@@ -52,6 +52,28 @@ required tools. To use it:
 - The installer script will detect a previous configuration file, and
   ask whether to preserve it.
 
+## Installation as an OpenWrt package (recommended on OpenWrt)
+
+Download `cake-autorate_*.apk` (OpenWrt 25.12+) or `cake-autorate_*.ipk`
+(OpenWrt 24.10) from the Releases page of this fork and install it:
+
+    apk add --allow-untrusted cake-autorate_*.apk     # or: opkg install cake-autorate_*.ipk
+
+Configuration lives in `/etc/config/cake-autorate`: one `instance` section
+per WAN, option names identical to the variables in `defaults.sh`, arrays
+(`reflectors`) as `list` entries. Existing `/root/cake-autorate/config.*.sh`
+files from a `setup.sh` install are imported automatically on first install.
+
+    uci set cake-autorate.primary.enabled=1
+    uci set cake-autorate.primary.dl_if=ifb4wan
+    uci set cake-autorate.primary.ul_if=wan
+    uci commit cake-autorate
+    service cake-autorate reload
+
+Each instance is a separate procd instance: `service cake-autorate stop <id>`
+stops one, `service cake-autorate reload` restarts only instances whose
+configuration changed. Status: `ubus call cake-autorate status`.
+
 ## Installation Steps (Asus Merlin)
 
 - From the Asus Merlin GUI: enable adaptive QOS and select cake.
