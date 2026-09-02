@@ -1,0 +1,51 @@
+#!/bin/sh
+# One-shot on package install: import a setup.sh-style install into UCI,
+# stop the legacy launcher, and register the rpcd plugin.
+LEGACY=/root/cake-autorate
+SCRIPT_PREFIX=/usr/lib/cake-autorate
+
+/etc/init.d/rpcd reload 2>/dev/null
+
+[ -d "$LEGACY" ] || exit 0
+set -- "$LEGACY"/config.*.sh
+[ -f "$1" ] || exit 0
+
+# Legacy launcher (started by the old /etc/init.d/cake-autorate) must not run alongside procd instances.
+for p in /proc/[0-9]*; do
+	cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
+	# shellcheck disable=SC2249 # non-matching processes are intentionally left alone; no default case needed
+	case "$cmd" in
+		*"$LEGACY/launcher.sh"*|*"$LEGACY/cake-autorate.sh"*) kill "${p#/proc/}" 2>/dev/null ;;
+	esac
+done
+
+enabled=0
+ls /etc/rc.d/S*cake-autorate >/dev/null 2>&1 && enabled=1
+
+for f in "$@"; do
+	id=${f##*/config.}; id=${id%.sh}
+	if [ "$(uci -q get "cake-autorate.$id")" = "instance" ] && [ "$id" != "primary" ]; then
+		logger -t cake-autorate "migration: UCI section '$id' already exists, skipping $f"
+		continue
+	fi
+	# the packaged default 'primary' section (enabled=0) is replaced by the legacy primary config
+	uci -q delete "cake-autorate.$id"
+	if "$SCRIPT_PREFIX/migrate-legacy-config.sh" "$enabled" "$f" | uci batch; then
+		logger -t cake-autorate "migration: imported $f as UCI instance '$id' (enabled=$enabled); the legacy files under $LEGACY are no longer used and can be deleted"
+	else
+		logger -t cake-autorate "migration: failed to import $f"
+	fi
+done
+
+if [ -f "$LEGACY/mqtt-publisher.config.sh" ]; then
+	host=$(sed -n 's/^MQTT_HOST="\(.*\)"/\1/p' "$LEGACY/mqtt-publisher.config.sh")
+	if [ -n "$host" ]; then
+		uci -q set cake-autorate.mqtt=mqtt
+		uci -q set cake-autorate.mqtt.host="$host"
+		uci -q set cake-autorate.mqtt.port="$(sed -n 's/^MQTT_PORT="\(.*\)"/\1/p' "$LEGACY/mqtt-publisher.config.sh")"
+		uci -q set cake-autorate.mqtt.user="$(sed -n 's/^MQTT_USER="\(.*\)"/\1/p' "$LEGACY/mqtt-publisher.config.sh")"
+		uci -q set cake-autorate.mqtt.password="$(sed -n 's/^MQTT_PASS="\(.*\)"/\1/p' "$LEGACY/mqtt-publisher.config.sh")"
+	fi
+fi
+uci commit cake-autorate
+exit 0
