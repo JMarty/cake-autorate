@@ -66,8 +66,15 @@ status_instance() {
 	[ "$running" = "true" ] && running=true || running=false
 	valid_number "$pid" || pid=0
 	valid_number "$exit_code" || exit_code=0
+	# UCI stores only overrides: an interface equal to the defaults.sh value is
+	# absent from UCI, so fall back to the global section and then to defaults.sh
+	# (otherwise cake_present/tc_bandwidth query an empty device name).
 	config_get dl_if "$id" dl_if
 	config_get ul_if "$id" ul_if
+	[ -n "$dl_if" ] || config_get dl_if global dl_if
+	[ -n "$ul_if" ] || config_get ul_if global ul_if
+	[ -n "$dl_if" ] || dl_if=$(sed -n 's/^dl_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
+	[ -n "$ul_if" ] || ul_if=$(sed -n 's/^ul_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
 
 	printf '%s"%s":{"enabled":%s,"running":%s,"pid":%d,"exit_code":%d' "$SEP" "$id" \
 		"$([ "$enabled" -eq 1 ] && echo true || echo false)" "$running" "$pid" "$exit_code"
@@ -78,7 +85,7 @@ status_instance() {
 		sjson=$(cat "$sfile" 2>/dev/null)
 		[ -n "$sjson" ] || sjson=null
 		if [ "$sjson" != null ]; then
-			spid=$(printf '%s' "$sjson" | jsonfilter -e '@.pid')
+			spid=$(printf '%s' "$sjson" | jsonfilter -q -e '@.pid')
 			valid_number "$spid" && [ ! -d "/proc/$spid" ] && stale=1
 		fi
 		printf ',"stale":%s,"status":%s' "$([ $stale -eq 1 ] && echo true || echo false)" "$sjson"

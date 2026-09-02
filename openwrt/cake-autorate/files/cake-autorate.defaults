@@ -6,6 +6,17 @@ SCRIPT_PREFIX=/usr/lib/cake-autorate
 
 /etc/init.d/rpcd reload 2>/dev/null
 
+# apk refuses to overwrite files it does not own (a previous setup.sh install
+# generated /etc/init.d/cake-autorate) and installs ours as *.apk-new instead;
+# activate the packaged init scripts in that case. Runs on every upgrade.
+for f in /etc/init.d/cake-autorate /etc/init.d/mqtt-publisher; do
+	if [ -f "$f.apk-new" ]; then
+		mv "$f.apk-new" "$f"
+		chmod 755 "$f"
+		logger -t cake-autorate "activated packaged init script $f (replaced a pre-package version)"
+	fi
+done
+
 # Run the legacy import only once; a re-run on package upgrade must not
 # clobber settings the user has since changed in UCI/LuCI.
 # (Delete this option to force a re-migration.)
@@ -17,7 +28,9 @@ set -- "$LEGACY"/config.*.sh
 
 # Legacy launcher (started by the old /etc/init.d/cake-autorate) must not run alongside procd instances.
 for p in /proc/[0-9]*; do
-	cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)
+	# stderr redirect must precede the input redirect: a process exiting mid-scan
+	# would otherwise print "can't open /proc/<pid>/cmdline" from the shell itself
+	cmd=$(tr '\0' ' ' 2>/dev/null < "$p/cmdline")
 	# shellcheck disable=SC2249 # non-matching processes are intentionally left alone; no default case needed
 	case "$cmd" in
 		*"$LEGACY/launcher.sh"*|*"$LEGACY/cake-autorate.sh"*) kill "${p#/proc/}" 2>/dev/null ;;

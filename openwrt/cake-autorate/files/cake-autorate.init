@@ -41,7 +41,11 @@ start_service() {
 # procd compares the new instance set with the running one and only restarts
 # instances whose command/env/file changed; unchanged instances keep running.
 reload_service() {
-	start_service
+	# rc.common invokes reload_service WITHOUT the procd service context that
+	# rc_procd provides for start; calling start_service bare would emit the
+	# instance definitions into the void. rc_procd wraps it correctly and
+	# procd then diffs: only changed/new instances are (re)started.
+	rc_procd start_service
 }
 
 service_triggers() {

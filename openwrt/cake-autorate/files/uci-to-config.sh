@@ -13,13 +13,14 @@ set -u
 
 SCRIPT_PREFIX=${CAKE_AUTORATE_SCRIPT_PREFIX:-/usr/lib/cake-autorate}
 CONFIG_PREFIX=${CAKE_AUTORATE_CONFIG_PREFIX:-/var/etc/cake-autorate}
+# OpenWrt's functions.sh is not nounset-safe: it references $IPKG_INSTROOT
+# bare at file scope, and config_get/config_list_foreach reference an unset
+# $4 whenever the looked-up section/option doesn't exist (the normal case for
+# an unset option). Disable nounset BEFORE sourcing it — the test shim masked
+# this by pre-setting IPKG_INSTROOT, the real router did not.
+set +u
 # shellcheck disable=SC1090
 . "${CAKE_AUTORATE_FUNCTIONS_SH:-/lib/functions.sh}"
-# OpenWrt's functions.sh is not nounset-safe: config_get/config_list_foreach
-# reference an unset $4 (no default given) whenever the section/option being
-# looked up doesn't exist, which is the normal case for an unset option or an
-# instance without a given list. Disable nounset before using them.
-set +u
 
 id=${1:-}
 case ${id} in
