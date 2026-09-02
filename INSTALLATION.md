@@ -59,6 +59,15 @@ Download `cake-autorate_*.apk` (OpenWrt 25.12+) or `cake-autorate_*.ipk`
 
     apk add --allow-untrusted cake-autorate_*.apk     # or: opkg install cake-autorate_*.ipk
 
+Optionally add the LuCI web interface, `luci-app-cake-autorate_*.apk`
+(OpenWrt 25.12+) or `luci-app-cake-autorate_*.ipk` (OpenWrt 24.10), from
+the same Releases page:
+
+    apk add --allow-untrusted luci-app-cake-autorate_*.apk     # or: opkg install luci-app-cake-autorate_*.ipk
+
+After installing the LuCI app, run `service rpcd reload` and log out of
+and back into LuCI so the new ACL takes effect.
+
 Configuration lives in `/etc/config/cake-autorate`: one `instance` section
 per WAN, option names identical to the variables in `defaults.sh`, arrays
 (`reflectors`) as `list` entries. Existing `/root/cake-autorate/config.*.sh`

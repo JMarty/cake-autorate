@@ -56,8 +56,10 @@ What this fork adds on top of upstream:
 - **CI**: shellcheck + an 87-test suite + OpenWrt SDK package builds
   for every push, releases built from tags.
 
-A LuCI web interface (`luci-app-cake-autorate`: live graphs,
-per-instance control, SQM integration) is under active development.
+The **luci-app-cake-autorate** package adds the web interface: live
+per-instance status with rolling bandwidth/latency charts, full
+configuration editing, log viewing/export and MQTT publisher
+management under LuCI → Services → CAKE Autorate.
 
 On OpenWrt, install from the [Releases](../../releases) page — see
 [INSTALLATION](./INSTALLATION.md#installation-as-an-openwrt-package-recommended-on-openwrt).
