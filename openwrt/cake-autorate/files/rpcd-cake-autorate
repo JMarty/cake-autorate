@@ -102,6 +102,16 @@ status_instance() {
 		"$([ "$ul_present" = 1 ] && echo true || echo false)" "$dl_bw" "$ul_bw"
 }
 
+do_defaults() {
+	# Field metadata for the LuCI UI, parsed from the installed defaults.sh so
+	# the web form can never drift from what the scripts actually use.
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local json
+	json=$("$SCRIPT_PREFIX/defaults-to-json.sh" "$SCRIPT_PREFIX/defaults.sh" 2>/dev/null)
+	[ -n "$json" ] || reply_error "failed to parse defaults.sh"
+	printf '{"ok":true,"defaults":%s}\n' "$json"
+}
+
 do_status() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local version enabled
@@ -401,6 +411,7 @@ case "$1" in
 		cat <<-'EOF'
 		{
 		  "status": {},
+		  "defaults": {},
 		  "instance_control": { "id": "str", "action": "str" },
 		  "check_config": { "id": "str" },
 		  "log_tail": { "id": "str", "lines": 0 },
@@ -417,6 +428,7 @@ case "$1" in
 		read -r INPUT
 		case "$2" in
 			status)           do_status ;;
+			defaults)         do_defaults ;;
 			instance_control) do_instance_control ;;
 			check_config)     do_check_config ;;
 			log_tail)         do_log_tail ;;

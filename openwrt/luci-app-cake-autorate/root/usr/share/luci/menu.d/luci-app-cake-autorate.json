@@ -1,0 +1,28 @@
+{
+	"admin/services/cake-autorate": {
+		"title": "CAKE Autorate",
+		"order": 60,
+		"action": { "type": "firstchild" },
+		"depends": { "acl": [ "luci-app-cake-autorate" ], "uci": { "cake-autorate": true } }
+	},
+	"admin/services/cake-autorate/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": { "type": "view", "path": "cake-autorate/overview" }
+	},
+	"admin/services/cake-autorate/instances": {
+		"title": "Instances",
+		"order": 2,
+		"action": { "type": "view", "path": "cake-autorate/instances" }
+	},
+	"admin/services/cake-autorate/log": {
+		"title": "Log",
+		"order": 3,
+		"action": { "type": "view", "path": "cake-autorate/log" }
+	},
+	"admin/services/cake-autorate/mqtt": {
+		"title": "MQTT",
+		"order": 4,
+		"action": { "type": "view", "path": "cake-autorate/mqtt" }
+	}
+}

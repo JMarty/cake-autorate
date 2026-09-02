@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cake-autorate
 PKG_VERSION:=3.5.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 PKG_LICENSE:=GPL-2.0-only
 PKG_LICENSE_FILES:=LICENCE.md
 PKG_MAINTAINER:=janklovicsmarton
@@ -50,6 +50,7 @@ define Package/cake-autorate/install
 	$(INSTALL_BIN) $(SRC_ROOT)/mqtt-publisher.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_BIN) ./files/uci-to-config.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_BIN) ./files/migrate-legacy-config.sh $(1)/usr/lib/cake-autorate/
+	$(INSTALL_BIN) ./files/defaults-to-json.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/cake-autorate.init $(1)/etc/init.d/cake-autorate
 	$(INSTALL_BIN) ./files/mqtt-publisher.init $(1)/etc/init.d/mqtt-publisher

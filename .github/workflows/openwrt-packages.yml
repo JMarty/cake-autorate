@@ -39,7 +39,7 @@ jobs:
         env:
           ARCH: x86_64-${{ matrix.version }}
           FEEDNAME: cakeautorate
-          PACKAGES: cake-autorate
+          PACKAGES: cake-autorate luci-app-cake-autorate
           IGNORE_ERRORS: 0
       - name: Collect packages
         run: |
