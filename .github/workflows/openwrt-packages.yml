@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y shellcheck jq
       - name: shellcheck (bash scripts)
-        run: shellcheck -x openwrt/cake-autorate/files/uci-to-config.sh openwrt/cake-autorate/files/migrate-legacy-config.sh
+        run: shellcheck -x openwrt/cake-autorate/files/uci-to-config.sh openwrt/cake-autorate/files/migrate-legacy-config.sh openwrt/cake-autorate/files/defaults-to-json.sh
       - name: shellcheck (sh scripts)
         run: shellcheck -s sh -e SC1091 openwrt/cake-autorate/files/cake-autorate.init openwrt/cake-autorate/files/mqtt-publisher.init openwrt/cake-autorate/files/cake-autorate.defaults openwrt/cake-autorate/files/rpcd-cake-autorate
       - name: unit tests
