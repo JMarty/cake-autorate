@@ -56,7 +56,7 @@ cake_info() {
 
 status_instance() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id="$1" enabled running pid exit_code sfile spid stale=0 dl_if ul_if
+	local id="$1" enabled running pid exit_code sfile spid stale=0 dl_if ul_if sjson
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local dl_present dl_bw ul_present ul_bw
 	config_get_bool enabled "$id" enabled 0
@@ -75,9 +75,13 @@ status_instance() {
 
 	sfile="$RUN_DIR/$id/status.json"
 	if [ -r "$sfile" ]; then
-		spid=$(jsonfilter -q -i "$sfile" -e '@.pid')
-		valid_number "$spid" && [ ! -d "/proc/$spid" ] && stale=1
-		printf ',"stale":%s,"status":%s' "$([ $stale -eq 1 ] && echo true || echo false)" "$(cat "$sfile")"
+		sjson=$(cat "$sfile" 2>/dev/null)
+		[ -n "$sjson" ] || sjson=null
+		if [ "$sjson" != null ]; then
+			spid=$(printf '%s' "$sjson" | jsonfilter -e '@.pid')
+			valid_number "$spid" && [ ! -d "/proc/$spid" ] && stale=1
+		fi
+		printf ',"stale":%s,"status":%s' "$([ $stale -eq 1 ] && echo true || echo false)" "$sjson"
 	else
 		printf ',"stale":false,"status":null'
 	fi

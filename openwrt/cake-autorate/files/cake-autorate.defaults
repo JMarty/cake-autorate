@@ -6,6 +6,11 @@ SCRIPT_PREFIX=/usr/lib/cake-autorate
 
 /etc/init.d/rpcd reload 2>/dev/null
 
+# Run the legacy import only once; a re-run on package upgrade must not
+# clobber settings the user has since changed in UCI/LuCI.
+# (Delete this option to force a re-migration.)
+[ "$(uci -q get cake-autorate.global.legacy_migrated)" = "1" ] && exit 0
+
 [ -d "$LEGACY" ] || exit 0
 set -- "$LEGACY"/config.*.sh
 [ -f "$1" ] || exit 0
@@ -24,6 +29,13 @@ ls /etc/rc.d/S*cake-autorate >/dev/null 2>&1 && enabled=1
 
 for f in "$@"; do
 	id=${f##*/config.}; id=${id%.sh}
+	# shellcheck disable=SC2249 # non-matching ids fall through to the existing-section check below; no default case needed
+	case "$id" in
+		global|mqtt)
+			logger -t cake-autorate "migration: '$id' is a reserved section name, skipping $f"
+			continue
+			;;
+	esac
 	if [ "$(uci -q get "cake-autorate.$id")" = "instance" ] && [ "$id" != "primary" ]; then
 		logger -t cake-autorate "migration: UCI section '$id' already exists, skipping $f"
 		continue
@@ -31,7 +43,7 @@ for f in "$@"; do
 	# the packaged default 'primary' section (enabled=0) is replaced by the legacy primary config
 	uci -q delete "cake-autorate.$id"
 	if "$SCRIPT_PREFIX/migrate-legacy-config.sh" "$enabled" "$f" | uci batch; then
-		logger -t cake-autorate "migration: imported $f as UCI instance '$id' (enabled=$enabled); the legacy files under $LEGACY are no longer used and can be deleted"
+		logger -t cake-autorate "migration: imported $f as UCI instance '$id' (enabled=$enabled); the legacy files under $LEGACY are no longer used and can be deleted; re-migration: delete cake-autorate.global.legacy_migrated"
 	else
 		logger -t cake-autorate "migration: failed to import $f"
 	fi
@@ -47,5 +59,7 @@ if [ -f "$LEGACY/mqtt-publisher.config.sh" ]; then
 		uci -q set cake-autorate.mqtt.password="$(sed -n 's/^MQTT_PASS="\(.*\)"/\1/p' "$LEGACY/mqtt-publisher.config.sh")"
 	fi
 fi
+uci -q set cake-autorate.global=global
+uci -q set cake-autorate.global.legacy_migrated='1'
 uci commit cake-autorate
 exit 0
