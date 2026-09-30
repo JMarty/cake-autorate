@@ -5,7 +5,267 @@ bandwidth settings based on traffic load and round-trip time
 measurements. See the main [README](./README.md) page for more details
 of the algorithm.
 
-## Installation Steps (OpenWrt)
+There are two ways to install cake-autorate:
+
+- **OpenWrt 24.10 or newer:** install the prebuilt packages of this
+  fork (recommended) — see the next section. You get a normal OpenWrt
+  service, UCI configuration and, optionally, a LuCI web interface.
+- **Older OpenWrt, Asus Merlin, Debian/Ubuntu:** use the upstream
+  `setup.sh` installer — see
+  [Installation Steps (OpenWrt, setup.sh)](#installation-steps-openwrt-setupsh-installs-only)
+  and the sections after it. Sections marked "(setup.sh installs only)"
+  do not apply to the package.
+
+## Installation as an OpenWrt package (recommended on OpenWrt)
+
+### Before you start
+
+- CAKE must already be running on your WAN interface. The usual way
+  is SQM: install `luci-app-sqm`, then create and enable a queue with
+  the `cake` queueing discipline on your WAN interface, as described in the
+  [OpenWrt SQM documentation](https://openwrt.org/docs/guide-user/network/traffic-shaping/sqm).
+  (The web interface can also create a matching SQM queue for you:
+  **Create SQM instance…** on the Instances page.)
+- You need [SSH access to the router](https://openwrt.org/docs/guide-quick-start/sshadministration).
+  The packages cannot be installed through LuCI's
+  *System → Software → Upload Package* (see [Troubleshooting](#troubleshooting)).
+- Find out which package manager your router uses: if the `apk`
+  command exists, you have OpenWrt 25.12 or newer and need the `.apk`
+  files; if `opkg` exists, you have OpenWrt 24.10 and need the `.ipk`
+  files. (`cat /etc/openwrt_release` shows the version.)
+
+Both packages are architecture-independent (`all`): the same files
+work on every router model. Dependencies (`bash`, `fping`,
+`sqm-scripts`, `jsonfilter`, and `luci-base` for the web interface)
+are installed automatically from the OpenWrt package feeds.
+
+### Install
+
+The file names contain the version, so there is no fixed "latest"
+download link. Open the [Releases page](https://github.com/JMarty/cake-autorate/releases),
+pick the newest release and use its file names. The commands below
+use the names of release **v3.5.0-owrt4**; for a newer release,
+replace the tag and the file names accordingly.
+
+**OpenWrt 25.12 or newer (apk):**
+
+```sh
+apk update
+cd /tmp
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/cake-autorate-3.5.0-r3.apk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/luci-app-cake-autorate-1.1.0-r1.apk
+apk add --allow-untrusted ./cake-autorate-3.5.0-r3.apk
+apk add --allow-untrusted ./luci-app-cake-autorate-1.1.0-r1.apk
+service rpcd reload
+```
+
+**OpenWrt 24.10 (opkg):**
+
+```sh
+opkg update
+cd /tmp
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/cake-autorate_3.5.0-r3_all.ipk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/luci-app-cake-autorate_1.1.0-r1_all.ipk
+opkg install ./cake-autorate_3.5.0-r3_all.ipk
+opkg install ./luci-app-cake-autorate_1.1.0-r1_all.ipk
+service rpcd reload
+```
+
+The `luci-app-cake-autorate` package (the web interface) is optional;
+the `cake-autorate` package works on its own from the command line.
+`--allow-untrusted` is needed because the packages are not signed —
+see [Trust and verification](#trust-and-verification).
+
+After installing the web interface, **log out of LuCI and log in
+again** so the new menu and permissions take effect. The pages are
+under **Services → CAKE Autorate**.
+
+### Configure
+
+**With the web interface:** go to *Services → CAKE Autorate →
+Instances*, edit the `primary` instance (or add one), set the download
+and upload interfaces (e.g. `ifb4wan` and `wan` for an SQM queue on
+`wan`) and the minimum / base / maximum rates in kbit/s, tick
+*Enabled*, then *Save & Apply*. The Overview page then shows the live
+charts.
+
+**From the command line:** the configuration lives in
+`/etc/config/cake-autorate` — one `instance` section per WAN, option
+names identical to the variables in
+[`defaults.sh`](./defaults.sh), arrays (`reflectors`) as `list`
+entries, and an optional `global` section whose values apply to all
+instances. The package ships a disabled `primary` instance:
+
+```sh
+uci set cake-autorate.primary.dl_if='ifb4wan'   # CAKE download (ingress) interface
+uci set cake-autorate.primary.ul_if='wan'       # CAKE upload interface
+uci set cake-autorate.primary.min_dl_shaper_rate_kbps='5000'
+uci set cake-autorate.primary.base_dl_shaper_rate_kbps='20000'
+uci set cake-autorate.primary.max_dl_shaper_rate_kbps='80000'
+uci set cake-autorate.primary.min_ul_shaper_rate_kbps='5000'
+uci set cake-autorate.primary.base_ul_shaper_rate_kbps='20000'
+uci set cake-autorate.primary.max_ul_shaper_rate_kbps='35000'
+uci set cake-autorate.primary.enabled='1'
+uci commit cake-autorate
+service cake-autorate enable
+service cake-autorate reload
+```
+
+`tc qdisc ls` shows the interfaces on which CAKE runs. See
+[Setting the bandwidth](./README.md#the-solution-set-cake-parameters-based-on-load-and-latency)
+in the README for how to choose the three rates, and
+[Configuration of cake-autorate](#configuration-of-cake-autorate) below
+for the other settings (use them as UCI options with the same names).
+
+Each instance is a separate procd instance:
+
+- `service cake-autorate reload` — (re)starts only instances whose
+  configuration changed, or that are not running.
+- `service cake-autorate stop <id>` — stops one instance (until the
+  next reload/restart); `service cake-autorate stop` stops all.
+- `service cake-autorate restart` — restarts all instances.
+
+When an instance stops, CAKE is set back to its base rates
+(`reset_shaper_rates_on_exit`, default on). If you enable
+`sqm_sync_base_rates` for an instance that is linked to an SQM queue
+(`sqm_instance`), the service writes the instance's base rates into
+that SQM queue each time the instance starts.
+
+### Verify
+
+```sh
+service cake-autorate status          # is the service running?
+ubus call cake-autorate status        # live status of every instance as JSON
+logread -e cake-autorate              # service messages and errors
+```
+
+In `ubus call cake-autorate status`, a running instance shows
+`"running": true` and a `status` object with the current rates. An
+enabled instance that failed to start shows `config_errors` explaining
+which setting is wrong (the Overview page shows the same message).
+The detailed log of an instance is in
+`/var/log/cake-autorate.<id>.log` (if `log_to_file` is on) and on the
+*Log* page of the web interface.
+
+### Migration from a setup.sh install
+
+If `/root/cake-autorate/config.*.sh` files from an earlier `setup.sh`
+install exist when the package is installed, they are imported
+automatically:
+
+- each `config.<id>.sh` becomes a UCI instance `<id>` (the packaged
+  `primary` default is replaced by your `config.primary.sh`), and the
+  MQTT publisher settings are imported as well;
+- the old launcher is stopped, and the packaged init script replaces
+  the one `setup.sh` generated;
+- each imported instance is enabled if the old service was enabled at
+  boot;
+- the result is written to the system log
+  (`logread -e cake-autorate`).
+
+The import runs **once**: afterwards `cake-autorate.global.legacy_migrated`
+is set to `1`, and later package upgrades do not touch your UCI
+settings again. Once you have checked the imported settings, the old
+directory `/root/cake-autorate` is no longer used and can be deleted
+(also remove it from *System → Backup / Flash Firmware →
+Configuration* if you added it there). To repeat the import, delete
+the marker and then reinstall or upgrade the `cake-autorate` package:
+
+```sh
+uci delete cake-autorate.global.legacy_migrated
+uci commit cake-autorate
+```
+
+### Upgrade
+
+Download the files of the new release and install them exactly as in
+[Install](#install) (`apk add --allow-untrusted ./<file>.apk` or
+`opkg install ./<file>.ipk` with the new file names; install both
+packages from the same release). Your settings in
+`/etc/config/cake-autorate` are kept. Afterwards:
+
+```sh
+service rpcd reload
+service cake-autorate restart
+```
+
+and log out of LuCI and back in. If the browser still shows the old
+pages, reload them with Ctrl+F5.
+
+### Uninstall
+
+```sh
+apk del luci-app-cake-autorate cake-autorate      # OpenWrt 25.12+
+opkg remove luci-app-cake-autorate cake-autorate  # OpenWrt 24.10
+```
+
+The service is stopped first, and each running instance sets CAKE back
+to its base rates, so SQM keeps shaping at a sensible fixed rate.
+`/etc/config/cake-autorate` is left in place; delete it yourself if you
+do not plan to reinstall. SQM itself is not touched.
+
+### Rollback to setup.sh
+
+To go back to the upstream script install: uninstall both packages as
+above, then follow
+[Installation Steps (OpenWrt, setup.sh)](#installation-steps-openwrt-setupsh-installs-only).
+If `/root/cake-autorate` still exists, `setup.sh` offers to keep your
+old configuration files. Settings you made in UCI/LuCI after the
+migration are not copied back; transfer them to
+`/root/cake-autorate/config.<id>.sh` by hand.
+
+### Troubleshooting
+
+- **`UNTRUSTED signature` when uploading the package in LuCI**
+  (*System → Software → Upload Package*): LuCI cannot install unsigned
+  packages. Install from SSH with the commands above.
+- **An instance does not start / stops right away:** open the
+  Overview page — it shows the configuration error of a crashed
+  instance — or run `ubus call cake-autorate status` and look at
+  `config_errors`. `logread -e cake-autorate` shows the same messages.
+- **"No CAKE qdisc on …":** cake-autorate only adjusts an existing
+  CAKE queue. Enable SQM with the `cake` queueing discipline on that
+  interface (or use **Create SQM instance…** on the Instances page)
+  and check the interface names with `tc qdisc ls`.
+- **The menu Services → CAKE Autorate is missing, or pages show
+  "Access denied" / permission errors:** run `service rpcd reload`,
+  clear the LuCI cache with `rm -rf /tmp/luci-*`, then log out of LuCI
+  and back in.
+- **"The installed cake-autorate backend is older than this web
+  interface":** upgrade the `cake-autorate` package to the version
+  from the same release as `luci-app-cake-autorate`.
+- **Pinger method not installed:** the default pinger is `fping`
+  (installed as a dependency). Other methods such as `tsping` or
+  `irtt` need their own packages — see
+  [Selecting a pinger method](#selecting-a-pinger-method).
+
+### Trust and verification
+
+The packages are built from this repository by GitHub Actions (see
+`.github/workflows/openwrt-packages.yml`) and attached to the release
+together with a `SHA256SUMS` file. They are **not signed** with an
+OpenWrt signing key, which is why `apk` needs `--allow-untrusted`
+(`opkg` installs local unsigned files without an extra option). To
+check that the files you downloaded match the ones built by CI,
+download `SHA256SUMS` from the same release into the same directory
+and run:
+
+```sh
+cd /tmp
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/SHA256SUMS
+grep -F -e cake-autorate-3.5.0-r3.apk -e luci-app-cake-autorate-1.1.0-r1.apk SHA256SUMS > sums.txt
+sha256sum -c sums.txt
+```
+
+(For `.ipk` files, use their names in the `grep` line.) Each file must
+report `OK`.
+
+## Installation Steps (OpenWrt) (setup.sh installs only)
+
+On OpenWrt 24.10 or newer, the
+[package installation](#installation-as-an-openwrt-package-recommended-on-openwrt)
+above is recommended instead. The `setup.sh` installer below comes
+from upstream and installs the upstream version.
 
 cake-autorate provides an installation script that installs all the
 required tools. To use it:
@@ -52,36 +312,6 @@ required tools. To use it:
 - The installer script will detect a previous configuration file, and
   ask whether to preserve it.
 
-## Installation as an OpenWrt package (recommended on OpenWrt)
-
-Download `cake-autorate_*.apk` (OpenWrt 25.12+) or `cake-autorate_*.ipk`
-(OpenWrt 24.10) from the Releases page of this fork and install it:
-
-    apk add --allow-untrusted cake-autorate_*.apk     # or: opkg install cake-autorate_*.ipk
-
-Optionally add the LuCI web interface, `luci-app-cake-autorate_*.apk`
-(OpenWrt 25.12+) or `luci-app-cake-autorate_*.ipk` (OpenWrt 24.10), from
-the same Releases page:
-
-    apk add --allow-untrusted luci-app-cake-autorate_*.apk     # or: opkg install luci-app-cake-autorate_*.ipk
-
-After installing the LuCI app, run `service rpcd reload` and log out of
-and back into LuCI so the new ACL takes effect.
-
-Configuration lives in `/etc/config/cake-autorate`: one `instance` section
-per WAN, option names identical to the variables in `defaults.sh`, arrays
-(`reflectors`) as `list` entries. Existing `/root/cake-autorate/config.*.sh`
-files from a `setup.sh` install are imported automatically on first install.
-
-    uci set cake-autorate.primary.enabled=1
-    uci set cake-autorate.primary.dl_if=ifb4wan
-    uci set cake-autorate.primary.ul_if=wan
-    uci commit cake-autorate
-    service cake-autorate reload
-
-Each instance is a separate procd instance: `service cake-autorate stop <id>`
-stops one, `service cake-autorate reload` restarts only instances whose
-configuration changed. Status: `ubus call cake-autorate status`.
 
 ## Installation Steps (Asus Merlin)
 
@@ -148,7 +378,7 @@ For multiple WAN interfaces, enable additional services and duplicate the config
   sudo systemctl enable --now cake-autorate@wan2.service
   ```
 
-## Initial Configuration Steps (OpenWrt and Asus Merlin)
+## Initial Configuration Steps (OpenWrt and Asus Merlin) (setup.sh installs only)
 
 - For a fresh install, you will need to undertake the following steps.
 
@@ -207,6 +437,12 @@ In the configuration file:
 
 cake-autorate is highly configurable and almost every aspect of it can
 be (and is ideally) fine-tuned.
+
+> **Package installs:** the variables below are set as UCI options
+> with the same names in `/etc/config/cake-autorate` (for example
+> `uci set cake-autorate.primary.dl_owd_delta_delay_thr_ms='100'`), or
+> on the Instances page of the web interface, instead of in
+> _config.primary.sh_. Whole numbers are accepted for decimal settings.
 
 - The file _defaults.sh_ has sensible default settings. After
   cake-autorate has been installed, you may wish to override some of
@@ -325,7 +561,7 @@ be (and is ideally) fine-tuned.
     |       `log_file_max_time_mins` | Number of minutes to elapse between log file rotaton                                                                                                                                      |
     |         `log_file_max_size_KB` | Number of KB (i.e. bytes/1024) worth of log lines between log file rotations                                                                                                              |
 
-## Manual testing
+## Manual testing (setup.sh installs only)
 
 To start the `cake-autorate.sh` script and watch the logged output as
 it adjusts the CAKE parameters, run these commands:
@@ -339,7 +575,7 @@ cd /root/cake-autorate     # to the cake-autorate directory
   upload rates as you use the connection.
 - Press ^C to halt the process.
 
-## Install as a service (OpenWrt)
+## Install as a service (OpenWrt) (setup.sh installs only)
 
 You can install cake-autorate as a service that starts up the autorate
 process whenever the router reboots. To do this:
@@ -380,7 +616,7 @@ source /etc/profile
 /jffs/scripts/cake-autorate/launcher.sh
 ```
 
-## Preserving cake-autorate files for backup or upgrades (OpenWrt)
+## Preserving cake-autorate files for backup or upgrades (OpenWrt) (setup.sh installs only)
 
 OpenWrt devices can save files across upgrades. Read the
 [Backup and Restore page on the OpenWrt wiki](https://openwrt.org/docs/guide-user/troubleshooting/backup_restore#customize_and_verify)
@@ -407,6 +643,13 @@ config.instance.sh
 ```
 
 where 'instance' is replaced with e.g. 'primary', 'secondary', etc.
+
+With the **OpenWrt package**, add one `instance` section per WAN
+instead (Instances page → *Add*, or a new `config instance '<id>'`
+section in `/etc/config/cake-autorate`). Each instance runs as its own
+procd instance and can be started and stopped separately. With mwan3,
+set *Probe routing* (Instances page, *Pinger* tab) so that each
+instance's pings leave through its own WAN.
 
 ## Selecting a pinger method
 

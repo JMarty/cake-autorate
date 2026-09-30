@@ -25,8 +25,14 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 
 ## Current status (update me)
 - Released: v3.5.0-owrt3 (backend 3.5.0-r2, LuCI 1.0.0-r1).
-- In progress: pre-release hardening (plan: docs/superpowers/plans/2026-09-30-pre-release-hardening.md)
-  -> target v3.5.0-owrt4 (backend 3.5.0-r3, LuCI 1.1.0-r1).
+- Pre-release hardening (plan: docs/superpowers/plans/2026-09-30-pre-release-hardening.md)
+  Tasks 1-9 done on branch `pre-release-hardening` (code, tests, CI, docs);
+  CHANGELOG lists it as "v3.5.0-owrt4 (unreleased)".
+- Next (Task 10, with the user): on-router checks, add screenshots
+  images/luci-overview.png + images/luci-instances.png (referenced by README),
+  enable GitHub Issues and private vulnerability reporting (docs link to
+  both; currently disabled), merge, tag v3.5.0-owrt4 (backend 3.5.0-r3,
+  LuCI 1.1.0-r1), write release notes, drop "(unreleased)" in CHANGELOG.
 - Verified on a real router: OpenWrt 25.12 (apk), 5G WAN, single instance.
 
 ## Features
@@ -109,6 +115,11 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 | .../root/usr/share/luci/menu.d, rpcd/acl.d | Menu and ACL JSON |
 | openwrt/tests/ | Offline tests (run-tests.sh, test_*.sh, fixtures/, shim/); router/smoke.sh runs on a device |
 | .github/workflows/openwrt-packages.yml | CI: lint, tests, SDK builds, release |
+| .github/ISSUE_TEMPLATE/ | Bug report form (versions, ubus status, logread) + contact links (upstream forum, security advisory) |
+| README.md | Fork section: features, LuCI pages, screenshots, versioning table, reporting, security note; rest is upstream text |
+| INSTALLATION.md | Package install/configure/verify/migrate/upgrade/uninstall/rollback/troubleshooting/trust first; upstream setup.sh sections labelled "(setup.sh installs only)" |
+| CHANGELOG.md | "OpenWrt package / LuCI app (fork)" section on top (per owrt release), upstream history below |
+| CONTRIBUTING.md, SECURITY.md | Dev checks, coding rules, commit style; private vulnerability reporting + by-design security notes |
 
 ## Dev workflow
 - Tests: `wsl bash openwrt/tests/run-tests.sh` (Windows) / `bash openwrt/tests/run-tests.sh`
@@ -122,4 +133,15 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   `openwrt/gh-action-sdk` SHA deliberately (`gh api repos/openwrt/gh-action-sdk/commits/main --jq .sha`).
 
 ## Known limitations / backlog
-- Pre-release hardening in progress — see the plan in docs/superpowers/plans/ (local only).
+- No translations yet (no po/ directory); strings are all wrapped in _().
+- Packages are unsigned (apk needs --allow-untrusted; SHA256SUMS published).
+- --check-config does not yet cover post-exit checks (log_file_buffer_timeout_ms < 50,
+  reflector syntax/duplicates).
+- rpcd: /tmp/cake-autorate-export created with default umask, symlink not
+  rejected; sync_sqm_rates falls back to defaults on non-integer base rates;
+  `uci commit sqm` also commits unrelated staged sqm edits; service_control
+  returns ok on init failure.
+- Tests: no coverage for rpcd runtime paths, tc reset, log override fallback,
+  LuCI JS helpers.
+- CI: softprops/action-gh-release tag not pinned; node --check step passes on an
+  empty file list.

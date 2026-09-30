@@ -1,0 +1,63 @@
+name: Bug report (OpenWrt package / LuCI app)
+description: Something in the cake-autorate or luci-app-cake-autorate packages, or their installation, does not work.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! This tracker is for the **OpenWrt packages, the LuCI web interface and installation/upgrade**.
+        Questions about the algorithm or tuning (which rates, thresholds or reflectors to use) are best asked in the
+        [upstream forum thread](https://forum.openwrt.org/t/cake-w-adaptive-bandwidth/191049).
+        Please remove passwords (e.g. the MQTT password) and anything else private from pasted output.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: Steps to reproduce, error messages, screenshots of the web interface if relevant.
+    validations:
+      required: true
+  - type: input
+    id: openwrt-version
+    attributes:
+      label: OpenWrt version and router model
+      description: "Output of `cat /etc/openwrt_release` (DISTRIB_DESCRIPTION) and the router model."
+      placeholder: "OpenWrt 25.12.0, <router model>"
+    validations:
+      required: true
+  - type: textarea
+    id: package-versions
+    attributes:
+      label: Package versions
+      description: "Output of `apk info -v | grep cake` (OpenWrt 25.12+) or `opkg list-installed | grep cake` (OpenWrt 24.10)."
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How was it installed?
+      options:
+        - Fresh package install
+        - Package upgrade from an earlier release
+        - Package installed over an old setup.sh install (migration)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: ubus status
+      description: "Output of `ubus call cake-autorate status`."
+      render: json
+  - type: textarea
+    id: logread
+    attributes:
+      label: System log
+      description: "Relevant lines of `logread -e cake-autorate`."
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration (optional)
+      description: "`uci show cake-autorate` — remove the MQTT password line (`cake-autorate.mqtt.password`) before pasting."
+      render: text

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Algorithm, tuning and settings questions (upstream forum)
+    url: https://forum.openwrt.org/t/cake-w-adaptive-bandwidth/191049
+    about: How cake-autorate reacts, which rates/thresholds/reflectors to use — the upstream authors and users discuss this in the OpenWrt forum thread.
+  - name: Security problem
+    url: https://github.com/JMarty/cake-autorate/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

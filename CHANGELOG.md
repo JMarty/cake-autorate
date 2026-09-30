@@ -5,12 +5,99 @@ bandwidth settings based on traffic load and one-way-delay or
 round-trip time measurements. Read the [README](./README.md) file for
 more about cake-autorate. This is the history of changes.
 
+## OpenWrt package / LuCI app (fork)
+
+Releases of this fork ([JMarty/cake-autorate](https://github.com/JMarty/cake-autorate))
+package the upstream script for OpenWrt. They are tagged
+`v<upstream version>-owrt<N>`; the upstream algorithm is unchanged.
+The upstream history continues further below.
+
+### v3.5.0-owrt4 (unreleased) — cake-autorate 3.5.0-r3, luci-app-cake-autorate 1.1.0-r1
+
+Service (`cake-autorate`):
+
+- When an instance stops or restarts, or the package is removed, CAKE
+  is set back to the base rates (`reset_shaper_rates_on_exit`, default
+  on) instead of staying at the last adjusted rate.
+- The live status file is written without starting extra processes
+  (less CPU load) and carries a timestamp (`updated_us`), so stale
+  data is recognised.
+- `--check-config` now also checks relations between settings
+  (e.g. min ≤ base ≤ max, different download/upload interfaces).
+- Whole numbers are accepted in decimal settings (`30` becomes
+  `30.0`) instead of stopping the instance with a type error.
+- A `log_file_path_override` directory that does not exist falls back
+  to `/var/log` with a warning.
+- The run directory is only removed by the instance that created it.
+- SQM base-rate sync (`sqm_sync_base_rates`) is done by the service
+  each time an instance starts, not by the web interface.
+- ubus: new `service_control` method; `status` reports
+  `config_errors` for an enabled instance that crashed because of a
+  bad setting; `log_export` keeps only the newest export per instance
+  (in `/tmp/cake-autorate-export`).
+- A failed import of a legacy `setup.sh` config is logged as failed.
+
+Web interface (`luci-app-cake-autorate` 1.1.0):
+
+- Instances: download/upload interface and base rates are editable,
+  on/off settings have three states (Default / On / Off), real
+  validation of min ≤ base ≤ max and of interface conflicts, reserved
+  (`global`, `mqtt`) and duplicate names are rejected, a clone is
+  created disabled and without interfaces, **Create SQM instance…**
+  moved above the list, the pinger method shows its default, and a
+  warning appears when the service package is too old.
+- Overview charts: time range 1/5/10/30 min, drag to zoom,
+  double-click to reset, synchronised hover values across charts,
+  automatic scale up to Gbit/s, readable in dark themes, tap support
+  on phones; stopped or stale instances show no outdated data; the
+  configuration error of a crashed instance is shown on its card.
+- Log: the full log is exported and downloaded as a file (no size
+  limit), the type filter covers all record types, an empty log shows
+  a hint. MQTT: a host is required when the publisher is enabled.
+- The Status-page widget hides itself when there is nothing to show.
+- Narrower permissions (ACL): the app only uses its own ubus object.
+- CI: `SHA256SUMS` attached to releases, pinned OpenWrt SDK action,
+  shellcheck of the core scripts and tests, syntax check of the
+  JavaScript.
+- Documentation: installation, upgrade, uninstall, troubleshooting,
+  security note, contributing guide and issue template.
+
+### v3.5.0-owrt3 (2026-09-02) — cake-autorate 3.5.0-r2, luci-app-cake-autorate 1.0.0-r1
+
+- First release of the LuCI web interface (Services → CAKE Autorate):
+  live per-instance status with rolling bandwidth/latency charts,
+  configuration editing with validation, per-instance
+  start/stop/restart, log viewing/export, MQTT publisher management,
+  SQM/mwan3 integration and a Status-page widget.
+- New ubus `defaults` method exposing every setting's default value
+  and description from the installed `defaults.sh`.
+
+### v3.5.0-owrt2 (2026-09-02) — cake-autorate 3.5.0-r1
+
+- Installing over an old `setup.sh` install now activates the
+  packaged init scripts automatically (apk had installed them as
+  `*.apk-new`, leaving the legacy launcher active).
+- `service cake-autorate reload` now works and restarts only instances
+  whose configuration changed.
+- Config rendering no longer crashes on the router
+  (`IPKG_INSTROOT: unbound variable`).
+- ubus `status`: `cake_present`/`tc_bandwidth_kbps` are correct for
+  interfaces left at their default value.
+- Cosmetic fixes in the migration and a quiet `jsonfilter` call.
+
+### v3.5.0-owrt1 (2026-09-02) — cake-autorate 3.5.0-r1
+
+- First packaged release: UCI configuration, one procd instance per
+  WAN, ubus/rpcd status and control API, automatic migration of
+  `setup.sh` installs, MQTT publisher service. Superseded by owrt2.
+
+## Upstream cake-autorate
+
 <!-- Zep7RkGZ52|NEW ENTRY MARKER, DO NOT REMOVE -->
 
 ## [Unreleased]
 
 - Introduce support for running on Debian/Ubuntu
-- OpenWrt package / LuCI app: fork-free status.json writer (adds `updated_us`), reset CAKE to base rates on exit (`reset_shaper_rates_on_exit`), run-dir ownership guard, log path override fallback, `--check-config` validates cross-field relations
 
 ## 2026-03-04 - Version 3.5.0
 
