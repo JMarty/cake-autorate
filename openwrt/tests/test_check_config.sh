@@ -25,6 +25,24 @@ assert_eq "bad rates: exit 1" 1 "${rc}"
 assert_contains "bad rates: message" "min <= base <= max" "${out}"
 assert_contains "bad rates: prefix" "ERROR;" "${out}"
 
+# --check-config must never write the log file, even when the config sets
+# log_to_file=1 (rpcd runs it every few seconds for a crashed instance).
+# Run a copy of the script whose log path points into a temp dir.
+tmpd=$(mktemp -d)
+sed "s|^log_file_path=/var/log/cake-autorate.log$|log_file_path=${tmpd}/cake-autorate.log|" "${S}" > "${tmpd}/cake-autorate.sh"
+if grep -q "^log_file_path=${tmpd}/" "${tmpd}/cake-autorate.sh"
+then pass "log path redirected for test"
+else fail "log path redirected for test" "sed did not match"
+fi
+out=$(bash "${tmpd}/cake-autorate.sh" --check-config "${F}/config.logbadrates.sh" 2>&1); rc=$?
+assert_eq "log_to_file=1 relation error: exit 1" 1 "${rc}"
+assert_contains "log_to_file=1 relation error: message" "min <= base <= max" "${out}"
+if [ -e "${tmpd}/cake-autorate.log" ]
+then fail "check-config wrote no log file" "$(cat "${tmpd}/cake-autorate.log")"
+else pass "check-config wrote no log file"
+fi
+rm -rf "${tmpd}"
+
 out=$(bash "${S}" --check-config "${F}/config.sameif.sh" 2>&1); rc=$?
 assert_eq "same if: exit 1" 1 "${rc}"
 assert_contains "same if: message" "cannot be the same" "${out}"

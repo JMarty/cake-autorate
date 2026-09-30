@@ -1068,6 +1068,8 @@ then
 	# fork: also validate cross-field relations (normally checked after startup)
 	# shellcheck source=config.primary.sh
 	. "${config_path}"
+	# fork: sourcing the config restores e.g. log_to_file=1 -- keep --check-config side-effect free
+	log_to_file=0 print_to_stdout=1 use_logger=0
 	# shellcheck disable=SC2310
 	check_config_relations || exit 1
 	printf 'Config file %s is valid.\n' "${config_path}"
