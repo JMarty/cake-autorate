@@ -97,7 +97,7 @@ return view.extend({
 		if (!id) return;
 
 		ui.showModal(_('Reset log'), [
-			E('p', {}, _('This truncates the log file for instance "%s". Continue?').format(id)),
+			E('p', {}, [ _('This truncates the log file for instance "%s". Continue?').format(id) ]),
 			E('div', { 'class': 'right' }, [
 				E('button', { 'class': 'btn', 'click': ui.hideModal }, _('Cancel')),
 				' ',
@@ -107,7 +107,7 @@ return view.extend({
 						return api.logReset(id).then(function(res) {
 							ui.hideModal();
 							if (!res || !res.ok) {
-								ui.addNotification(null, E('p', {}, (res && res.error) || _('Failed to reset log.')), 'error');
+								ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Failed to reset log.') ]), 'error');
 								return;
 							}
 							ui.addNotification(null, E('p', {}, _('Log reset.')), 'info');
@@ -126,7 +126,7 @@ return view.extend({
 
 		return api.logExport(id).then(function(res) {
 			if (!res || !res.ok) {
-				ui.addNotification(null, E('p', {}, (res && res.error) || _('Failed to export log.')), 'error');
+				ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Failed to export log.') ]), 'error');
 				return;
 			}
 
@@ -139,10 +139,10 @@ return view.extend({
 				/* Revoke after the click has been dispatched to the download. */
 				setTimeout(function() { URL.revokeObjectURL(url); }, 0);
 			}).catch(function(err) {
-				ui.addNotification(null, E('p', {}, _('Export succeeded on the router (%s) but the download failed: %s').format(res.path, String((err && err.message) || err))), 'error');
+				ui.addNotification(null, E('p', {}, [ _('Export succeeded on the router (%s) but the download failed: %s').format(res.path, String((err && err.message) || err)) ]), 'error');
 			});
 		}).catch(function(err) {
-			ui.addNotification(null, E('p', {}, _('Failed to export log: %s').format(String((err && err.message) || err))), 'error');
+			ui.addNotification(null, E('p', {}, [ _('Failed to export log: %s').format(String((err && err.message) || err)) ]), 'error');
 		});
 	},
 

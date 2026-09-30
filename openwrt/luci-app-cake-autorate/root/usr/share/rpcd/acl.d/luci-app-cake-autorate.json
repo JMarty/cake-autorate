@@ -14,7 +14,7 @@
 		"write": {
 			"uci": [ "cake-autorate" ],
 			"ubus": {
-				"cake-autorate": [ "instance_control", "service_control", "log_export", "log_reset", "sqm_create", "sqm_sync_rates" ]
+				"cake-autorate": [ "instance_control", "service_control", "log_export", "log_reset", "sqm_create" ]
 			}
 		}
 	}

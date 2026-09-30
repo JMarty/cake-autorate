@@ -47,7 +47,7 @@ return view.extend({
 			ui.addNotification(null, E('p', {}, _('Summary stats enabled on all instances.')), 'info');
 			return self.refreshStatus();
 		}).catch(function(err) {
-			ui.addNotification(null, E('p', {}, _('Failed to enable summary stats: %s').format(String((err && err.message) || err))), 'error');
+			ui.addNotification(null, E('p', {}, [ _('Failed to enable summary stats: %s').format(String((err && err.message) || err)) ]), 'error');
 		});
 	},
 
@@ -55,7 +55,7 @@ return view.extend({
 		var self = this;
 		return api.serviceControl('mqtt-publisher', action).then(function(res) {
 			if (!res || !res.ok)
-				ui.addNotification(null, E('p', {}, (res && res.error) || _('Action failed')), 'error');
+				ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Action failed') ]), 'error');
 			return self.refreshStatus();
 		});
 	},

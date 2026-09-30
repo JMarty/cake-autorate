@@ -64,10 +64,18 @@ function liveStatus(inst) {
 	return (inst.running && !inst.stale) ? inst.status : null;
 }
 
+/* Configured value of `key` for instance `id`: the instance option, else the
+ * global section (instances inherit unset options from it). */
+function cfg(id, key) {
+	var v = uci.get('cake-autorate', id, key);
+	if (v == null || v === '') v = uci.get('cake-autorate', 'global', key);
+	return (v == null || v === '') ? null : v;
+}
+
 function ifaceText(id, inst) {
 	var st = inst.status;
-	var dl = (st && st.dl_if) || uci.get('cake-autorate', id, 'dl_if') || '-';
-	var ul = (st && st.ul_if) || uci.get('cake-autorate', id, 'ul_if') || '-';
+	var dl = (st && st.dl_if) || cfg(id, 'dl_if') || '-';
+	var ul = (st && st.ul_if) || cfg(id, 'ul_if') || '-';
 	return dl + ' / ' + ul;
 }
 
@@ -79,8 +87,8 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
 			' ',
 			E('a', { 'href': L.url('admin/services/cake-autorate/instances') }, _('Go to the Instances page.'))
 		]));
-	var ifaces = { dl: (inst.status && inst.status.dl_if) || uci.get('cake-autorate', id, 'dl_if') || '-',
-	               ul: (inst.status && inst.status.ul_if) || uci.get('cake-autorate', id, 'ul_if') || '-' };
+	var ifaces = { dl: (inst.status && inst.status.dl_if) || cfg(id, 'dl_if') || '-',
+	               ul: (inst.status && inst.status.ul_if) || cfg(id, 'ul_if') || '-' };
 
 	if (inst.cake_present) {
 		if (inst.cake_present.dl === false)
@@ -89,14 +97,14 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
 			msgs.push(_('No CAKE qdisc on %s — is SQM enabled on this interface?').format(ifaces.ul));
 	}
 
-	var method = uci.get('cake-autorate', id, 'pinger_method') || 'fping';
+	var method = cfg(id, 'pinger_method') || 'fping';
 	var pingerKey = PING_KEY_MAP[method] || method;
 	if (sysinfo && sysinfo.pingers && sysinfo.pingers[pingerKey] === false)
 		msgs.push(_('Pinger method "%s" is not installed on this device.').format(method));
 
 	if (totalInstances > 1) {
-		var prefix = uci.get('cake-autorate', id, 'ping_prefix_string');
-		var extra = uci.get('cake-autorate', id, 'ping_extra_args');
+		var prefix = cfg(id, 'ping_prefix_string');
+		var extra = cfg(id, 'ping_extra_args');
 		if (!prefix && !extra)
 			msgs.push(_('Multi-WAN: probes may not go out through this WAN — set probe routing on the Instances page.'));
 	}
@@ -123,11 +131,11 @@ function renderWarnings(el, msgs) {
 function renderReflectors(el, inst) {
 	var st = liveStatus(inst);
 	if (!st || !st.reflectors) {
-		dom.content(el, _('Reflectors') + ': -');
+		dom.content(el, [ _('Reflectors: -') ]);
 		return;
 	}
-	dom.content(el, _('Reflectors') + ': ' + _('%s active').format(st.reflectors.active) +
-		' — ' + st.reflectors.list.join(', ') + ' (' + (st.pinger_method || '-') + ')');
+	dom.content(el, [ _('Reflectors: %s active — %s (%s)').format(st.reflectors.active,
+		st.reflectors.list.join(', '), st.pinger_method || '-') ]);
 }
 
 function buildStatRow(dirLabel) {
@@ -190,7 +198,7 @@ return view.extend({
 
 		var stateDot = E('span', { 'style': 'display:inline-block;width:10px;height:10px;border-radius:5px;background:' + meta.color });
 		var stateLabel = E('span', {}, meta.label);
-		var ifaceLabel = E('span', {}, ifaceText(id, inst));
+		var ifaceLabel = E('span', {}, [ ifaceText(id, inst) ]);
 		var st = liveStatus(inst);
 		var uptimeLabel = E('span', {}, (st && st.uptime_s != null) ? api.fmtUptime(st.uptime_s) : '-');
 		var pidLabel = E('span', {}, inst.pid ? String(inst.pid) : '-');
@@ -201,7 +209,7 @@ return view.extend({
 				'click': ui.createHandlerFn(self, function() {
 					return api.instanceControl(id, action).then(function(res) {
 						if (!res || !res.ok)
-							ui.addNotification(null, E('p', {}, (res && res.error) || _('Action failed')), 'error');
+							ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Action failed') ]), 'error');
 						return self.pollTick();
 					});
 				})
@@ -382,7 +390,7 @@ return view.extend({
 				'click': ui.createHandlerFn(self, function() {
 					return api.serviceControl('cake-autorate', action).then(function(res) {
 						if (!res || !res.ok)
-							ui.addNotification(null, E('p', {}, (res && res.error) || _('Action failed')), 'error');
+							ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Action failed') ]), 'error');
 						return self.pollTick();
 					});
 				})

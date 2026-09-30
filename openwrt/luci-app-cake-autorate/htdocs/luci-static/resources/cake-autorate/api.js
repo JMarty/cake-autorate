@@ -11,7 +11,6 @@ var callLogExport = rpc.declare({ object: 'cake-autorate', method: 'log_export',
 var callLogReset = rpc.declare({ object: 'cake-autorate', method: 'log_reset', params: ['id'], expect: { '': {} } });
 var callSystemInfo = rpc.declare({ object: 'cake-autorate', method: 'system_info', expect: { '': {} } });
 var callSqmCreate = rpc.declare({ object: 'cake-autorate', method: 'sqm_create', params: ['interface', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
-var callSqmSyncRates = rpc.declare({ object: 'cake-autorate', method: 'sqm_sync_rates', params: ['sqm_id', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
 var callMqttStatus = rpc.declare({ object: 'cake-autorate', method: 'mqtt_status', expect: { '': {} } });
 var callServiceControl = rpc.declare({ object: 'cake-autorate', method: 'service_control', params: ['service', 'action'], expect: { '': {} } });
 
@@ -25,7 +24,6 @@ return baseclass.extend({
 	logReset: callLogReset,
 	getSystemInfo: callSystemInfo,
 	sqmCreate: callSqmCreate,
-	sqmSyncRates: callSqmSyncRates,
 	getMqttStatus: callMqttStatus,
 	serviceControl: callServiceControl,
 

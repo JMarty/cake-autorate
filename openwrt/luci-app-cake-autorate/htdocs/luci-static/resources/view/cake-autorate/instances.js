@@ -16,12 +16,13 @@
  * flagOpt()) so "off" can be stored even when the built-in default is on.
  *
  * Save flow: plain LuCI save/apply. The init script renders each instance's
- * config on (re)start, validates it (--check-config) and, when
- * sqm_sync_base_rates is set, pushes the base rates into the linked SQM
- * queue. Config errors are reported per instance on the Overview page.
- * The modal validators below catch the common cross-field mistakes
+ * config on (re)start and, when sqm_sync_base_rates is set, pushes the base
+ * rates into the linked SQM queue; it does not validate the config. The
+ * modal validators below catch the common cross-field mistakes
  * (min <= base <= max, connection active threshold, dl_if != ul_if) before
- * anything is saved.
+ * anything is saved. Anything else makes the instance exit at startup; the
+ * rpcd status call then runs --check-config for that crashed instance and
+ * the Overview page shows the result as a configuration error.
  */
 
 /* UCI pinger_method values use a hyphen; system_info.pingers keys use '_'. */
@@ -138,17 +139,23 @@ function activeThrValidate(section_id, value) {
 	return true;
 }
 
-/* Interface fields: unique across instances and dl_if != ul_if. */
+/* Interface fields: unique across instances and dl_if != ul_if. Compares
+ * effective values (instance -> global -> built-in default), so two instances
+ * that both inherit the same interface are caught too. */
 function ifValidate(ownKey, otherKey) {
 	return function(section_id, value) {
-		if (!value) return true;
+		var own = effectiveRaw(this, section_id, ownKey, ownKey, value);
+		if (!own) return true;
 		var others = uci.sections('cake-autorate', 'instance');
 		for (var i = 0; i < others.length; i++) {
 			if (others[i]['.name'] === section_id) continue;
-			if (others[i][ownKey] === value)
+			var theirs = others[i][ownKey];
+			if (theirs == null || theirs === '') theirs = uci.get('cake-autorate', 'global', ownKey);
+			if (theirs == null || theirs === '') theirs = (defaults[ownKey] || {}).value;
+			if (theirs === own)
 				return _('Interface already used by instance %s').format(others[i]['.name']);
 		}
-		if (value === effectiveRaw(this, section_id, otherKey, ownKey, value))
+		if (own === effectiveRaw(this, section_id, otherKey, ownKey, value))
 			return _('Download and upload interface must differ');
 		return true;
 	};
@@ -226,7 +233,7 @@ return view.extend({
 									ui.addNotification(null, E('p', {}, _('SQM instance created.')), 'info');
 									location.reload();
 								} else {
-									ui.addNotification(null, E('p', {}, (res && res.error) || _('Failed to create SQM instance.')), 'error');
+									ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Failed to create SQM instance.') ]), 'error');
 								}
 							});
 					}
@@ -276,7 +283,7 @@ return view.extend({
 						uci.set('cake-autorate', newId, 'enabled', '0');
 						ui.hideModal();
 						return map.save(null, true).then(function() {
-							ui.addNotification(null, E('p', {}, _('Copy "%s" created disabled. Set its interfaces, then enable it.').format(newId)), 'info');
+							ui.addNotification(null, E('p', {}, [ _('Copy "%s" created disabled. Set its interfaces, then enable it.').format(newId) ]), 'info');
 						});
 					}
 				}, _('Clone'))
@@ -558,9 +565,12 @@ return view.extend({
 		/* ── Above the map: backend warning + SQM creation ─────────── */
 		var top = [];
 
-		if (Object.keys(defaults).length === 0)
+		/* No defaults at all: pre-owrt3 backend. Defaults without
+		 * reset_shaper_rates_on_exit: owrt3 (3.5.0-r2) backend, which lacks
+		 * that option, service_control and the other r3 features. */
+		if (Object.keys(defaults).length === 0 || !defaults.reset_shaper_rates_on_exit)
 			top.push(E('div', { 'class': 'alert-message warning' },
-				E('p', {}, _('The installed cake-autorate backend is older than this web interface: field defaults and help texts are unavailable. Please update the cake-autorate package.'))));
+				E('p', {}, _('The installed cake-autorate backend is older than this web interface: some settings, field defaults, help texts or buttons may be missing or not work. Please update the cake-autorate package.'))));
 
 		if (sysinfo.sqm_installed)
 			top.push(E('div', { 'class': 'cbi-section' }, [
