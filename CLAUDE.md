@@ -94,10 +94,15 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - Optional SQM management (instance option `manage_sqm=1`, ignored by
   uci-to-config): start switches the linked queue on with CAKE, a disabled
   instance's queue is switched off on start/reload, `stop [<id>]` switches it
-  off (restart = off + on). Rate sync and switching share one
-  `uci commit sqm` + one sqm reload per start/stop pass, none when nothing
-  changed. `shutdown` (K-script at reboot) leaves sqm untouched; package
-  removal (default_prerm -> `stop`) switches managed queues off.
+  off (restart = off + on): stop_service only records the ids, the switch-off
+  happens in `service_stopped` (after procd_kill). Rate sync and switching
+  share one `uci commit sqm` + one sqm reload per start/stop pass, none when
+  nothing changed. `shutdown()` is overridden (accepted design): a reboot
+  leaves SQM as it is, boot re-enables it; package removal
+  (default_prerm -> `stop`) switches managed queues off. Without sqm-lib.sh
+  the init script logs and does nothing SQM-related, rpcd reports
+  `"sqm":null` and refuses sqm_control (`list` still works). Tests point
+  `CAKE_AUTORATE_SQM_INIT` at a recording stub.
 - LuCI pages (Services -> CAKE Autorate): Overview, Instances, Log, MQTT,
   plus a Status-page widget. Rolling charts with zoom, synced hover and
   dynamic scale; instance grid shows defaults. Charts are theme-safe
@@ -180,4 +185,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   runtime paths, tc reset, log override fallback, LuCI JS helpers.
 - manage_sqm: two instances sharing one queue are not arbitrated on
   `stop <id>` (the queue goes off although the other instance runs).
+- manage_sqm makes the whole-sqm reload (all queues) more frequent; deleting a
+  managed instance leaves its queue on; procd_kill is asynchronous, so
+  service_stopped can still race the instance's exit-time CAKE reset.
 - CI: node --check step passes on an empty file list.

@@ -10,14 +10,20 @@ F="${REPO_ROOT}/openwrt/cake-autorate/files"
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/sqmmanage"
 . ./shim/openwrt-shim.sh
 
+# in-memory uci + recording sqm init script (never the host's /etc/init.d/sqm)
+declare -A SQMDB
+. ./uci_stub.sh
+
 # Source the plugin as a library: its /usr/share/libubox, /lib and /usr/lib includes do not
 # exist here (bash reports and continues), and with no arguments the dispatcher does nothing.
 set +u
 # shellcheck disable=SC1090,SC1091
 . "${F}/rpcd-cake-autorate" 2>/dev/null
 # stays +u: OpenWrt's config_get references an unset $4 for a missing option (ash runs without -u)
+assert_eq "plugin without its lib: SQM marked unavailable" "0" "${SQM_LIB_OK}"
 # shellcheck disable=SC1091
 . "${F}/sqm-lib.sh"
+SQM_LIB_OK=1
 SCRIPT_PREFIX="${REPO_ROOT}"
 tmpd=$(mktemp -d)
 SQM_CONF="${tmpd}/sqm"
@@ -31,8 +37,6 @@ json_dump() { printf '{%s}\n' "${JOUT}"; }
 json_load() { JIN="$1"; }
 json_get_var() { printf -v "$1" '%s' "$(printf '%s' "${JIN}" | jq -r --arg k "$2" '.[$k] // empty')"; }
 
-declare -A SQMDB
-. ./uci_stub.sh
 SQMDB=(
 	[sqm.q2]=queue [sqm.q2.interface]=eth9 [sqm.q2.enabled]=0 [sqm.q2.qdisc]=cake [sqm.q2.script]=piece_of_cake.qos
 	[sqm.q1]=queue [sqm.q1.interface]=eth1 [sqm.q1.enabled]=1 [sqm.q1.qdisc]='fq"codel' [sqm.q1.script]=simple.qos
@@ -74,6 +78,7 @@ assert_eq "sqm_control: not a queue" "false" "$( (ctl '{"sqm_id":"notq","action"
 assert_eq "sqm_control: missing queue" "false" "$( (ctl '{"sqm_id":"nosuch","action":"enable"}') | jq -c .ok)"
 assert_eq "sqm_control: invalid action" '{"ok":false,"error":"invalid action"}' "$( (ctl '{"sqm_id":"q4","action":"toggle"}') )"
 assert_eq "sqm_control: rejected calls commit nothing" "0" "${SQM_COMMITS}"
+assert_eq "sqm_control: rejected calls reload nothing" "0" "$(sqm_reloads)"
 ctl '{"sqm_id":"q4","action":"enable"}' > "${tmpd}/r"
 assert_eq "sqm_control enable: ok" "true" "$(jq -c .ok "${tmpd}/r")"
 assert_eq "sqm_control enable: enabled" "1" "${SQMDB[sqm.q4.enabled]}"
@@ -83,6 +88,7 @@ assert_eq "sqm_control enable: one commit" "1" "${SQM_COMMITS}"
 ctl '{"sqm_id":"q4","action":"enable"}' > "${tmpd}/r"
 assert_eq "sqm_control enable again: ok" "true" "$(jq -c .ok "${tmpd}/r")"
 assert_eq "sqm_control enable again: no commit" "1" "${SQM_COMMITS}"
+assert_eq "sqm_control enable again: no reload" "1" "$(sqm_reloads)"
 ctl '{"sqm_id":"wanq","action":"enable"}' > "${tmpd}/r"
 assert_eq "sqm_control enable: cake with layer_cake script kept" "layer_cake.qos" "${SQMDB[sqm.wanq.script]}"
 ctl '{"sqm_id":"q4","action":"disable"}' > "${tmpd}/r"
@@ -90,10 +96,20 @@ assert_eq "sqm_control disable: ok" "true" "$(jq -c .ok "${tmpd}/r")"
 assert_eq "sqm_control disable: disabled" "0" "${SQMDB[sqm.q4.enabled]}"
 assert_eq "sqm_control disable: qdisc kept" "cake" "${SQMDB[sqm.q4.qdisc]}"
 assert_eq "sqm_control disable: commit" "2" "${SQM_COMMITS}"
+assert_eq "sqm_control: reloads paired with commits" "2" "$(sqm_reloads)"
+
+# lib missing: status reports null, sqm_control refuses, nothing is touched
+SQM_LIB_OK=0
+out=$(status_json 2>/dev/null)
+assert_eq "no lib: status sqm null" "null" "$(printf '%s' "${out}" | jq -c .m1.sqm)"
+assert_eq "no lib: status still has cake_present" "false" "$(printf '%s' "${out}" | jq -c .m1.cake_present.ul)"
+assert_contains "no lib: sqm_control refuses" "sqm-lib.sh missing" "$( (ctl '{"sqm_id":"q4","action":"enable"}') )"
+assert_eq "no lib: nothing committed" "2" "${SQM_COMMITS}"
+SQM_LIB_OK=1
 
 # listed and dispatched
 list=$(bash "${F}/rpcd-cake-autorate" list 2>/dev/null)
 assert_eq "list: sqm_control signature" '{"sqm_id":"str","action":"str"}' "$(printf '%s' "${list}" | jq -c .sqm_control)"
 grep -q '^[[:space:]]*sqm_control)[[:space:]]*do_sqm_control' "${F}/rpcd-cake-autorate" && pass "dispatch: sqm_control" || fail "dispatch: sqm_control"
-rm -rf "${tmpd}"
+rm -rf "${tmpd}" "${SQM_STUB_DIR}"
 report

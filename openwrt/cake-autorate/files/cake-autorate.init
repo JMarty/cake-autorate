@@ -13,8 +13,13 @@ SCRIPT_PREFIX="${CAKE_AUTORATE_SCRIPT_PREFIX:-/usr/lib/cake-autorate}"
 CONFIG_PREFIX="${CAKE_AUTORATE_CONFIG_PREFIX:-/var/etc/cake-autorate}"
 UCI_TO_CONFIG="${CAKE_AUTORATE_UCI_TO_CONFIG:-${SCRIPT_PREFIX}/uci-to-config.sh}"
 SQM_LIB="${CAKE_AUTORATE_SQM_LIB:-${SCRIPT_PREFIX}/sqm-lib.sh}"
-# shellcheck source=sqm-lib.sh
-[ -r "$SQM_LIB" ] && . "$SQM_LIB"
+# Without the lib nothing SQM-related is done at all (no rate sync, no switching),
+# so no sqm edit is ever staged without being committed.
+SQM_LIB_OK=0
+if [ -r "$SQM_LIB" ]; then
+	# shellcheck source=sqm-lib.sh
+	. "$SQM_LIB" && SQM_LIB_OK=1
+fi
 
 # SQM changes are staged with `uci set` during one start/stop pass and applied at its
 # end with at most one `uci commit sqm` + one sqm reload (none when nothing changed).
@@ -22,6 +27,17 @@ SQM_DIRTY=0
 SQM_ON=
 SQM_OFF=
 SQM_SHUTDOWN=0
+SQM_STOP_IDS=
+SQM_LIB_WARNED=
+
+# sqm_lib_ok: 0 when sqm-lib.sh is loaded; otherwise log (once per pass) and return 1
+sqm_lib_ok() {
+	[ "$SQM_LIB_OK" -eq 1 ] && return 0
+	[ -n "$SQM_LIB_WARNED" ] && return 1
+	SQM_LIB_WARNED=1
+	logger -t cake-autorate "$SQM_LIB missing: SQM rate sync and manage_sqm skipped (reinstall cake-autorate)"
+	return 1
+}
 
 # base_rate dl|ul <rendered config>: the last base rate line (instance options are
 # emitted after global ones, so they win), unquoted; defaults.sh only when the
@@ -45,6 +61,7 @@ sync_sqm_rates() {
 	config_get_bool sync "$id" sqm_sync_base_rates 0
 	config_get sqm "$id" sqm_instance
 	[ "$sync" -eq 1 ] && [ -n "$sqm" ] || return 0
+	sqm_lib_ok || return 0
 	[ "$(uci -q get "sqm.$sqm")" = "queue" ] || return 0
 	dl=$(base_rate dl "$cfg"); ul=$(base_rate ul "$cfg")
 	# never fall back to defaults.sh over an explicit non-integer value, never set an empty rate
@@ -64,6 +81,7 @@ sqm_note_managed() {
 	local manage
 	config_get_bool manage "$1" manage_sqm 0
 	[ "$manage" -eq 1 ] || return 0
+	sqm_lib_ok || return 0
 	sqm_resolve_queue "$1" || return 0
 	case "$2" in
 		on) SQM_ON="$SQM_ON $SQM_QUEUE=$1" ;;
@@ -77,6 +95,7 @@ sqm_note_managed() {
 sqm_manage_apply() {
 	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local t q
+	sqm_lib_ok || return 0
 	for t in $SQM_OFF; do
 		q=${t%%=*}
 		case " $SQM_ON " in *" $q="*) continue ;; *) ;; esac
@@ -107,6 +126,7 @@ sqm_stop_instance() {
 	local manage
 	config_get_bool manage "$1" manage_sqm 0
 	[ "$manage" -eq 1 ] || return 0
+	sqm_lib_ok || return 0
 	sqm_resolve_queue "$1" || return 0
 	if sqm_queue_disable "$SQM_QUEUE"; then
 		SQM_DIRTY=1
@@ -143,32 +163,50 @@ start_instance() {
 
 start_service() {
 	mkdir -p "$CONFIG_PREFIX"
-	SQM_DIRTY=0; SQM_ON=; SQM_OFF=
+	SQM_DIRTY=0; SQM_ON=; SQM_OFF=; SQM_LIB_WARNED=
 	config_load cake-autorate
 	config_foreach start_instance instance
 	# before start_service returns, i.e. before procd launches the instances
 	sqm_manage_apply
 }
 
-# rc.common (procd) stop(): stop_service "$@", then procd_kill <service> "$1" --
-# $1 is the instance of `service cake-autorate stop <id>`, empty for a full stop.
+# rc.common (procd) stop(): procd_lock; stop_service "$@"; procd_kill <service> "$1";
+# service_stopped. $1 is the instance of `service cake-autorate stop <id>`, empty for a
+# full stop. stop_service only records the instances; the queues are switched off in
+# service_stopped, i.e. after procd_kill, so a still-running instance's tc calls and its
+# exit-time CAKE reset do not hit a qdisc that sqm is tearing down.
 # restart = stop + start, so managed SQM goes off and on again; reload does not stop.
+sqm_record_stop() { SQM_STOP_IDS="$SQM_STOP_IDS $1"; }
+
 stop_service() {
+	SQM_STOP_IDS=
 	[ "$SQM_SHUTDOWN" -eq 1 ] && return 0
-	SQM_DIRTY=0
 	config_load cake-autorate
 	if [ -n "$1" ]; then
 		case "$1" in *[!A-Za-z0-9_]*) return 0 ;; *) ;; esac
-		[ "$(config_get "$1" TYPE)" = "instance" ] && sqm_stop_instance "$1"
+		[ "$(config_get "$1" TYPE)" = "instance" ] && sqm_record_stop "$1"
 	else
-		config_foreach sqm_stop_instance instance
+		config_foreach sqm_record_stop instance
 	fi
+	return 0
+}
+
+service_stopped() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id
+	[ -n "$SQM_STOP_IDS" ] || return 0
+	SQM_DIRTY=0; SQM_LIB_WARNED=
+	for id in $SQM_STOP_IDS; do
+		sqm_stop_instance "$id"
+	done
+	SQM_STOP_IDS=
 	sqm_commit
 }
 
-# At system shutdown (K-script) leave the sqm config alone: the K link only exists while
-# the service is enabled, so the next boot starts it and switches the queue on anyway;
-# switching it off here would only cost two flash writes per reboot.
+# At system shutdown (procd runs `K* shutdown`, rc.common's default is `stop`) leave the
+# sqm config alone: the K link only exists while the service is enabled, so the next boot
+# starts it and switches the queue on anyway; switching it off here would only cost two
+# flash writes per reboot. A reboot therefore leaves SQM as it is.
 shutdown() {
 	SQM_SHUTDOWN=1
 	stop

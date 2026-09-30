@@ -9,8 +9,11 @@ RUN_DIR=/var/run/cake-autorate
 INIT=/etc/init.d/cake-autorate
 SCRIPT_PREFIX=/usr/lib/cake-autorate
 SQM_CONF=/etc/config/sqm
-# sqm_resolve_queue / sqm_queue_enable / sqm_queue_disable / sqm_apply (shared with the init script)
-. "$SCRIPT_PREFIX/sqm-lib.sh"
+# sqm_resolve_queue / sqm_queue_enable / sqm_queue_disable / sqm_apply (shared with the init
+# script). Guarded: a missing lib must not break `list` or the other methods; status then
+# reports "sqm":null and sqm_control refuses.
+SQM_LIB_OK=0
+[ -r "$SCRIPT_PREFIX/sqm-lib.sh" ] && . "$SCRIPT_PREFIX/sqm-lib.sh" && SQM_LIB_OK=1
 
 reply_error() {
 	json_init
@@ -89,9 +92,11 @@ status_instance() {
 	# absent from UCI, so fall back to the global section and then to defaults.sh
 	# (otherwise cake_present/tc_bandwidth query an empty device name).
 	config_get dl_if "$id" dl_if
+	config_get ul_if "$id" ul_if
 	[ -n "$dl_if" ] || config_get dl_if global dl_if
+	[ -n "$ul_if" ] || config_get ul_if global ul_if
 	[ -n "$dl_if" ] || dl_if=$(sed -n 's/^dl_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
-	ul_if=$(sqm_effective_ul_if "$id")
+	[ -n "$ul_if" ] || ul_if=$(sed -n 's/^ul_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
 
 	printf '%s"%s":{"enabled":%s,"running":%s,"pid":%d,"exit_code":%d' "$SEP" "$id" \
 		"$([ "$enabled" -eq 1 ] && echo true || echo false)" "$running" "$pid" "$exit_code"
@@ -148,6 +153,7 @@ status_instance() {
 sqm_status_json() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local installed=false queue=null linked=false enabled=false manage qdisc="" script="" iface=""
+	if [ "$SQM_LIB_OK" -ne 1 ]; then printf ',"sqm":null'; return; fi
 	config_get_bool manage "$1" manage_sqm 0
 	if [ -f "$SQM_CONF" ]; then
 		installed=true
@@ -469,6 +475,7 @@ do_sqm_control() {
 	json_load "$INPUT"
 	json_get_var id sqm_id
 	json_get_var action action
+	[ "$SQM_LIB_OK" -eq 1 ] || reply_error "$SCRIPT_PREFIX/sqm-lib.sh missing (reinstall cake-autorate)"
 	case "$id" in ''|*[!A-Za-z0-9_]*) reply_error "invalid sqm id" ;; *) ;; esac
 	sqm_is_queue "$id" || reply_error "no SQM instance '$id'"
 	case "$action" in

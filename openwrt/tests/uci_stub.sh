@@ -3,10 +3,18 @@
 #   SQMDB     associative array "sqm.<sec>[.<opt>]" -> value (declare it before sourcing)
 #   SQM_ORDER queue section names in file order (what `uci -X show sqm` lists)
 #   SQM_COMMITS  number of `uci commit` calls;  SQM_LOG  accumulated logger lines
+#   sqm_reloads  prints how often the recording /etc/init.d/sqm stand-in was run
+#                (CAKE_AUTORATE_SQM_INIT is exported: source this BEFORE sqm-lib.sh / the init script)
 # shellcheck disable=SC2034 # counters/logs are read by the sourcing test
 SQM_COMMITS=0
 SQM_LOG=""
 SQM_ORDER=()
+SQM_STUB_DIR=$(mktemp -d)
+: > "${SQM_STUB_DIR}/reloads"
+printf '#!/bin/sh\necho "$*" >> "%s/reloads"\n' "${SQM_STUB_DIR}" > "${SQM_STUB_DIR}/sqm"
+chmod +x "${SQM_STUB_DIR}/sqm"
+export CAKE_AUTORATE_SQM_INIT="${SQM_STUB_DIR}/sqm"
+sqm_reloads() { grep -c '^reload$' "${SQM_STUB_DIR}/reloads"; }
 logger() { SQM_LOG="${SQM_LOG}${*}
 "; }
 uci() {

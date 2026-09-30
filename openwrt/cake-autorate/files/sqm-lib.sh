@@ -6,6 +6,9 @@
 # never replaced by the sqm one.
 # shellcheck disable=SC2034,SC2154 # results (SQM_*) are read by the sourcing script, which also sets SCRIPT_PREFIX
 
+# sqm-scripts init script (overridable so the offline tests never touch a host's sqm)
+SQM_INIT="${CAKE_AUTORATE_SQM_INIT:-/etc/init.d/sqm}"
+
 # sqm_is_true <value>: sqm-scripts style boolean
 sqm_is_true() {
 	case "$1" in 1|on|true|yes|enabled) return 0 ;; *) return 1 ;; esac
@@ -84,6 +87,6 @@ sqm_queue_disable() {
 # sqm_apply: commit the staged sqm changes and reload sqm-scripts once.
 sqm_apply() {
 	uci -q commit sqm || return 1
-	/etc/init.d/sqm reload >/dev/null 2>&1
+	"$SQM_INIT" reload >/dev/null 2>&1
 	return 0
 }
