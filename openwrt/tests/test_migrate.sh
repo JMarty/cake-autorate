@@ -21,4 +21,28 @@ out=$(bash "${M}" 0 /nonexistent/config.x.sh 2>&1); rc=$?
 assert_eq "missing file: exit 1" 1 "${rc}"
 out=$(bash "${M}" 0 "${PWD}/fixtures/legacy/notaconfig.sh" 2>&1); rc=$?
 assert_eq "bad name: exit 1" 1 "${rc}"
+
+# defaults script: a failing migrate must be logged as failed, not as imported
+d=$(mktemp -d)
+mkdir -p "${d}/legacy" "${d}/bin"
+: > "${d}/legacy/config.wan-2.sh"
+sed -e "s#^LEGACY=.*#LEGACY=${d}/legacy#" -e "s#^SCRIPT_PREFIX=.*#SCRIPT_PREFIX=\"${REPO_ROOT}/openwrt/cake-autorate/files\"#" \
+	"${REPO_ROOT}/openwrt/cake-autorate/files/cake-autorate.defaults" > "${d}/defaults-run.sh"
+cat > "${d}/bin/logger" <<'STUB'
+#!/bin/sh
+shift 2
+echo "$*" >> "$LOGGER_OUT"
+STUB
+cat > "${d}/bin/uci" <<'STUB'
+#!/bin/sh
+[ "$1" = -q ] && shift
+[ "$1" = batch ] && cat > /dev/null
+exit 0
+STUB
+chmod +x "${d}/bin/logger" "${d}/bin/uci"
+LOGGER_OUT="${d}/log" PATH="${d}/bin:${PATH}" sh "${d}/defaults-run.sh" >/dev/null 2>&1 < /dev/null
+log=$(cat "${d}/log" 2>/dev/null)
+assert_contains "failed import logged" "migration: failed to import" "${log}"
+assert_not_contains "failed import not reported as imported" "migration: imported" "${log}"
+rm -rf "${d}"
 report

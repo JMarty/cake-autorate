@@ -35,6 +35,16 @@ out=${2:-${CONFIG_PREFIX}/config.${id}.sh}
 mapfile -t valid_keys < <(grep -E '^[^(#| )].*=' "${SCRIPT_PREFIX}/defaults.sh" | sed -e 's/[\t ]*\#.*//g' -e 's/=.*//g')
 mapfile -t array_keys < <(grep -oE '^[A-Za-z_]+=\(' "${SCRIPT_PREFIX}/defaults.sh" | tr -d '=(')
 
+# Keys whose default is a float (e.g. 30.0): cake-autorate type-checks values
+# against the default, so an integer typed in LuCI/uci ("30") must be written as "30.0".
+mapfile -t float_keys < <(grep -oE '^[A-Za-z_]+=-?[0-9]*\.[0-9]+' "${SCRIPT_PREFIX}/defaults.sh" | sed 's/=.*//')
+is_float_key()
+{
+	local k
+	for k in "${float_keys[@]}"; do [[ ${k} == "${1}" ]] && return 0; done
+	return 1
+}
+
 is_array_key()
 {
 	local k
@@ -88,6 +98,7 @@ emit_key()
 		config_get value "${id}" "${key}"
 		[[ -n ${value} ]] || config_get value global "${key}"
 		[[ -n ${value} ]] || return 0
+		is_float_key "${key}" && [[ ${value} =~ ^-?[0-9]+$ ]] && value+=".0"
 		printf '%s="%s"\n' "${key}" "$(bash_escape "${value}")"
 	fi
 }

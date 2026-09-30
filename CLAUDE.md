@@ -35,9 +35,11 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - UCI config `/etc/config/cake-autorate`: one `instance` section per WAN,
   option names identical to `defaults.sh` variables, reflectors as `list`.
   UCI -> shell config generation (`uci-to-config.sh`), defaults exported as
-  JSON (`defaults-to-json.sh`).
+  JSON (`defaults-to-json.sh`). Integer values of float options (e.g. `30`) are
+  written as `30.0` so cake-autorate's type check accepts them.
 - Automatic migration of legacy `setup.sh` installs
-  (`/root/cake-autorate/config.*.sh`, incl. MQTT credentials) into UCI.
+  (`/root/cake-autorate/config.*.sh`, incl. MQTT credentials) into UCI; a failed
+  import is logged as failed (not as imported).
 - One procd instance per WAN (`cake-autorate.init`); stopping or
   reconfiguring one instance leaves the others running (mwan3-friendly).
 - Live status: each instance writes `/var/run/cake-autorate/<id>/status.json`,

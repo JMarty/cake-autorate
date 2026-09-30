@@ -55,7 +55,7 @@ for f in "$@"; do
 	fi
 	# the packaged default 'primary' section (enabled=0) is replaced by the legacy primary config
 	uci -q delete "cake-autorate.$id"
-	if "$SCRIPT_PREFIX/migrate-legacy-config.sh" "$enabled" "$f" | uci batch; then
+	if batch=$("$SCRIPT_PREFIX/migrate-legacy-config.sh" "$enabled" "$f") && printf '%s\n' "$batch" | uci batch; then
 		logger -t cake-autorate "migration: imported $f as UCI instance '$id' (enabled=$enabled); the legacy files under $LEGACY are no longer used and can be deleted; re-migration: delete cake-autorate.global.legacy_migrated"
 	else
 		logger -t cake-autorate "migration: failed to import $f"

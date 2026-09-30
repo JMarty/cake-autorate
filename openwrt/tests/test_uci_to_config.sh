@@ -30,6 +30,15 @@ assert_eq "basic: passes --check-config" 0 "${rc}"
 bash "${C}" wan "${out_dir}/custom.sh"
 [ -f "${out_dir}/custom.sh" ] && pass "explicit output path" || fail "explicit output path"
 
+export UCI_CONFIG_DIR="${PWD}/fixtures/uci/float"
+bash "${C}" flt
+c=$(cat "${out_dir}/config.flt.sh")
+assert_contains "float: integer -> float" $'\ndl_owd_delta_delay_thr_ms="30.0"\n' "${c}"
+assert_contains "float: real float kept" $'\nul_owd_delta_delay_thr_ms="12.5"\n' "${c}"
+assert_contains "float: integer key untouched" $'\nmin_dl_shaper_rate_kbps="5000"\n' "${c}"
+out=$(bash "${REPO_ROOT}/cake-autorate.sh" --check-config "${out_dir}/config.flt.sh" 2>&1); rc=$?
+assert_eq "float: passes --check-config" 0 "${rc}"
+
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/override"
 bash "${C}" a
 c=$(cat "${out_dir}/config.a.sh")
