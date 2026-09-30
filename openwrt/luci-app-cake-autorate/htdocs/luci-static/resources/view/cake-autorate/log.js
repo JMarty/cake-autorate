@@ -17,7 +17,7 @@
  */
 
 var LINE_OPTIONS = [100, 500, 2000];
-var TYPE_OPTIONS = ['DEBUG', 'INFO', 'SUMMARY', 'SHAPER', 'LOAD', 'REFLECTOR', 'CPU', 'ERROR'];
+var TYPE_OPTIONS = ['DEBUG', 'INFO', 'SUMMARY', 'SHAPER', 'LOAD', 'REFLECTOR', 'DATA', 'CPU', 'WARNING', 'ERROR', 'SYSLOG'];
 
 function fmtSize(bytes) {
 	if (bytes == null || isNaN(bytes)) return '-';
@@ -76,7 +76,12 @@ return view.extend({
 			self.pathLabel.textContent = res.path || '-';
 			self.sizeLabel.textContent = fmtSize(res.size);
 
-			var filtered = self.filterLines(res.lines || [], self.typeSelect.value);
+			if (res.size === 0 || !(res.lines && res.lines.length)) {
+				self.pre.textContent = _('The log is empty. Logging to file is controlled by "Log to file" (Instances → Logging, or Global settings).');
+				return;
+			}
+
+			var filtered = self.filterLines(res.lines, self.typeSelect.value);
 			self.pre.textContent = filtered.join('\n');
 			self.pre.scrollTop = self.pre.scrollHeight;
 		}).catch(function(err) {

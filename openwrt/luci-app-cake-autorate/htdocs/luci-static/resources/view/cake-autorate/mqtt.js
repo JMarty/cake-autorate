@@ -138,6 +138,12 @@ return view.extend({
 
 		var oHost = s.option(form.Value, 'host', _('Host'));
 		oHost.datatype = 'host';
+		oHost.validate = function(section_id, value) {
+			var en = this.section.formvalue(section_id, 'enabled');
+			if (en === '1' && !value)
+				return _('A host is required when the publisher is enabled');
+			return true;
+		};
 
 		var oPort = s.option(form.Value, 'port', _('Port'));
 		oPort.datatype = 'port';
@@ -147,6 +153,7 @@ return view.extend({
 
 		var oPassword = s.option(form.Value, 'password', _('Password'));
 		oPassword.password = true;
+		oPassword.description = _('Stored in /etc/config/cake-autorate and readable by LuCI users with access to this page.');
 
 		this.statusPanel = E('div', { 'class': 'cbi-section' }, []);
 		this.renderStatusPanel();
