@@ -29,7 +29,8 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   tri-state flags, validation, narrow ACL, fork-free status writer, reset
   to base rates on stop, CI checksums, public docs) + SQM awareness and
   optional SQM management (manage_sqm). Verified on a real router
-  (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging.
+  (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging;
+  the user's router runs the released owrt4 packages (manage_sqm on).
 - README screenshots (images/luci-overview.png, luci-instances.png,
   luci-instance-general.png, luci-instance-sqm.png) taken by the user on
   the owrt4 candidate; retake when the UI changes visibly.
