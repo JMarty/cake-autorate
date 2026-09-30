@@ -6,7 +6,7 @@
 # Reads /etc/config/cake-autorate. Options of the 'global' section are emitted
 # first, then the options of the named 'instance' section (instance wins).
 # Option names are the defaults.sh variable names; anything else in the
-# section (enabled, sqm_instance, sqm_sync_base_rates) is ignored.
+# section (enabled, sqm_instance, sqm_sync_base_rates, manage_sqm) is ignored.
 # Keys whose default in defaults.sh is a bash array (reflectors) become arrays;
 # they may be given as a UCI list or as a single option.
 set -u

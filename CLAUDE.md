@@ -33,6 +33,8 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   Parked review items also fixed: interface clash check ignores disabled
   instances, unused check_config ACL grant / api.checkConfig removed
   (rpcd method kept for CLI), overview version label is a text node.
+  SQM feature Part A (backend: status.sqm, sqm_control, manage_sqm) done;
+  Part B (LuCI SQM tab/overview line/no_cake state, ACL, README/CHANGELOG) next.
 - Next (Task 10, with the user): on-router checks — incl. a crashed
   instance with log_to_file=1 does not grow /var/log/cake-autorate.log
   (rpcd --check-config polling); `log_export` refuses a pre-made symlinked
@@ -74,12 +76,28 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - rpcd/ubus API (`ubus call cake-autorate <method>`): status, defaults,
   instance_control, service_control, check_config, log_tail, log_export,
   log_reset, system_info, sqm_create, sqm_sync_rates (CLI only; not in
-  the LuCI ACL), mqtt_status.
+  the LuCI ACL), sqm_control (`{"sqm_id","action":"enable"|"disable"}`:
+  enable sets enabled=1 and, unless the qdisc is cake, qdisc=cake +
+  piece_of_cake.qos; commit + sqm reload only when something changed;
+  LuCI ACL grant follows with the LuCI part), mqtt_status.
+  `status` gives every instance an `sqm` object: installed, queue (id|null),
+  linked (explicit sqm_instance), enabled, qdisc, script, interface, manage.
   `status` adds `config_errors` (check-config result) for enabled, stopped
   instances with a non-zero exit code; `log_export` keeps only the newest
   export per instance in /tmp/cake-autorate-export.
 - SQM base-rate sync (`sqm_sync_base_rates`) is done by the init script when
   an instance starts (`sync_sqm_rates`), not by the web UI.
+- Linked SQM queue (`files/sqm-lib.sh`, installed to /usr/lib/cake-autorate,
+  sourced by init + rpcd): `sqm_instance` if it names an sqm `queue`, else the
+  first queue whose `interface` is the instance's effective ul_if
+  (instance -> global -> defaults.sh).
+- Optional SQM management (instance option `manage_sqm=1`, ignored by
+  uci-to-config): start switches the linked queue on with CAKE, a disabled
+  instance's queue is switched off on start/reload, `stop [<id>]` switches it
+  off (restart = off + on). Rate sync and switching share one
+  `uci commit sqm` + one sqm reload per start/stop pass, none when nothing
+  changed. `shutdown` (K-script at reboot) leaves sqm untouched; package
+  removal (default_prerm -> `stop`) switches managed queues off.
 - LuCI pages (Services -> CAKE Autorate): Overview, Instances, Log, MQTT,
   plus a Status-page widget. Rolling charts with zoom, synced hover and
   dynamic scale; instance grid shows defaults. Charts are theme-safe
@@ -121,6 +139,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 | openwrt/cake-autorate/files/defaults-to-json.sh | defaults.sh -> JSON |
 | openwrt/cake-autorate/files/migrate-legacy-config.sh | Legacy config -> UCI |
 | openwrt/cake-autorate/files/rpcd-cake-autorate | rpcd/ubus API |
+| openwrt/cake-autorate/files/sqm-lib.sh | Linked-SQM-queue helpers shared by init + rpcd |
 | openwrt/luci-app-cake-autorate/Makefile | LuCI package definition |
 | .../htdocs/luci-static/resources/cake-autorate/{api,charts}.js | RPC wrappers, chart library |
 | .../resources/view/cake-autorate/{overview,instances,log,mqtt}.js | LuCI views |
@@ -156,6 +175,9 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   service_control returns ok on init failure; check_config is not cached
   (one --check-config run per crashed instance per poll); sqm sync reloads
   all of sqm, not just the linked interface.
-- Tests: no coverage for rpcd runtime paths, tc reset, log override fallback,
-  LuCI JS helpers.
+- Tests: rpcd covered only for status.sqm/sqm_control (test_rpcd_sqm.sh
+  sources the plugin with jshn/uci stubs); no coverage for the other rpcd
+  runtime paths, tc reset, log override fallback, LuCI JS helpers.
+- manage_sqm: two instances sharing one queue are not arbitrated on
+  `stop <id>` (the queue goes off although the other instance runs).
 - CI: node --check step passes on an empty file list.

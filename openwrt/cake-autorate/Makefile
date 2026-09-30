@@ -58,6 +58,7 @@ define Package/cake-autorate/install
 	$(INSTALL_BIN) ./files/uci-to-config.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_BIN) ./files/migrate-legacy-config.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_BIN) ./files/defaults-to-json.sh $(1)/usr/lib/cake-autorate/
+	$(INSTALL_DATA) ./files/sqm-lib.sh $(1)/usr/lib/cake-autorate/
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/cake-autorate.init $(1)/etc/init.d/cake-autorate
 	$(INSTALL_BIN) ./files/mqtt-publisher.init $(1)/etc/init.d/mqtt-publisher

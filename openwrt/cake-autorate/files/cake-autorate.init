@@ -2,6 +2,8 @@
 # cake-autorate: one procd instance per enabled 'instance' section of /etc/config/cake-autorate.
 #   service cake-autorate stop <id>     stop one instance (until the next reload)
 #   service cake-autorate reload        (re)start instances whose config changed or that are missing
+# An instance with manage_sqm=1 switches its linked SQM queue (sqm-lib.sh) on when it
+# starts and off when it is stopped or disabled.
 # shellcheck disable=SC2034
 USE_PROCD=1
 START=97
@@ -10,6 +12,16 @@ STOP=4
 SCRIPT_PREFIX="${CAKE_AUTORATE_SCRIPT_PREFIX:-/usr/lib/cake-autorate}"
 CONFIG_PREFIX="${CAKE_AUTORATE_CONFIG_PREFIX:-/var/etc/cake-autorate}"
 UCI_TO_CONFIG="${CAKE_AUTORATE_UCI_TO_CONFIG:-${SCRIPT_PREFIX}/uci-to-config.sh}"
+SQM_LIB="${CAKE_AUTORATE_SQM_LIB:-${SCRIPT_PREFIX}/sqm-lib.sh}"
+# shellcheck source=sqm-lib.sh
+[ -r "$SQM_LIB" ] && . "$SQM_LIB"
+
+# SQM changes are staged with `uci set` during one start/stop pass and applied at its
+# end with at most one `uci commit sqm` + one sqm reload (none when nothing changed).
+SQM_DIRTY=0
+SQM_ON=
+SQM_OFF=
+SQM_SHUTDOWN=0
 
 # base_rate dl|ul <rendered config>: the last base rate line (instance options are
 # emitted after global ones, so they win), unquoted; defaults.sh only when the
@@ -40,9 +52,66 @@ sync_sqm_rates() {
 	case "$ul" in ''|*[!0-9]*) logger -t cake-autorate "instance '$id': base_ul_shaper_rate_kbps '$ul' is not a whole number, SQM queue '$sqm' left unchanged"; return 0 ;; *) ;; esac
 	cur_dl=$(uci -q get "sqm.$sqm.download"); cur_ul=$(uci -q get "sqm.$sqm.upload")
 	[ "$cur_dl" = "$dl" ] && [ "$cur_ul" = "$ul" ] && return 0
-	uci -q set "sqm.$sqm.download=$dl"; uci -q set "sqm.$sqm.upload=$ul"; uci -q commit sqm
-	/etc/init.d/sqm reload >/dev/null 2>&1
+	uci -q set "sqm.$sqm.download=$dl"; uci -q set "sqm.$sqm.upload=$ul"
+	SQM_DIRTY=1
 	logger -t cake-autorate "instance '$id': SQM queue '$sqm' set to base rates $dl/$ul kbit/s"
+}
+
+# shellcheck disable=SC2154 # SQM_QUEUE is set by sqm_resolve_queue (sqm-lib.sh)
+# sqm_note_managed <instance> on|off: remember the linked queue of a manage_sqm=1 instance.
+sqm_note_managed() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local manage
+	config_get_bool manage "$1" manage_sqm 0
+	[ "$manage" -eq 1 ] || return 0
+	sqm_resolve_queue "$1" || return 0
+	case "$2" in
+		on) SQM_ON="$SQM_ON $SQM_QUEUE=$1" ;;
+		*) SQM_OFF="$SQM_OFF $SQM_QUEUE=$1" ;;
+	esac
+}
+
+# shellcheck disable=SC2154 # SQM_CHANGE is set by sqm_queue_enable (sqm-lib.sh)
+# sqm_manage_apply: switch off queues of disabled managed instances (unless a started
+# instance uses the same queue), switch on those of started ones, then commit once.
+sqm_manage_apply() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local t q
+	for t in $SQM_OFF; do
+		q=${t%%=*}
+		case " $SQM_ON " in *" $q="*) continue ;; *) ;; esac
+		if sqm_queue_disable "$q"; then
+			SQM_DIRTY=1
+			logger -t cake-autorate "instance '${t#*=}': SQM queue '$q' switched off (instance disabled, manage_sqm=1)"
+		fi
+	done
+	for t in $SQM_ON; do
+		q=${t%%=*}
+		if sqm_queue_enable "$q"; then
+			SQM_DIRTY=1
+			logger -t cake-autorate "instance '${t#*=}': SQM queue '$q' $SQM_CHANGE (manage_sqm=1)"
+		fi
+	done
+	sqm_commit
+}
+
+sqm_commit() {
+	[ "$SQM_DIRTY" -eq 1 ] || return 0
+	SQM_DIRTY=0
+	sqm_apply || logger -t cake-autorate "uci commit sqm failed, SQM changes not applied"
+}
+
+# sqm_stop_instance <instance>: switch off the linked queue of a manage_sqm=1 instance.
+sqm_stop_instance() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local manage
+	config_get_bool manage "$1" manage_sqm 0
+	[ "$manage" -eq 1 ] || return 0
+	sqm_resolve_queue "$1" || return 0
+	if sqm_queue_disable "$SQM_QUEUE"; then
+		SQM_DIRTY=1
+		logger -t cake-autorate "instance '$1': SQM queue '$SQM_QUEUE' switched off (instance stopped, manage_sqm=1)"
+	fi
 }
 
 start_instance() {
@@ -50,7 +119,10 @@ start_instance() {
 	local id="$1" enabled
 
 	config_get_bool enabled "$id" enabled 0
-	[ "$enabled" -eq 1 ] || return 0
+	if [ "$enabled" -ne 1 ]; then
+		sqm_note_managed "$id" off
+		return 0
+	fi
 
 	if ! "$UCI_TO_CONFIG" "$id"; then
 		logger -t cake-autorate "instance '$id': failed to render config from UCI, not starting"
@@ -58,6 +130,7 @@ start_instance() {
 	fi
 
 	sync_sqm_rates "$id"
+	sqm_note_managed "$id" on
 
 	procd_open_instance "$id"
 	procd_set_param command "$SCRIPT_PREFIX/cake-autorate.sh" "$CONFIG_PREFIX/config.$id.sh"
@@ -70,8 +143,35 @@ start_instance() {
 
 start_service() {
 	mkdir -p "$CONFIG_PREFIX"
+	SQM_DIRTY=0; SQM_ON=; SQM_OFF=
 	config_load cake-autorate
 	config_foreach start_instance instance
+	# before start_service returns, i.e. before procd launches the instances
+	sqm_manage_apply
+}
+
+# rc.common (procd) stop(): stop_service "$@", then procd_kill <service> "$1" --
+# $1 is the instance of `service cake-autorate stop <id>`, empty for a full stop.
+# restart = stop + start, so managed SQM goes off and on again; reload does not stop.
+stop_service() {
+	[ "$SQM_SHUTDOWN" -eq 1 ] && return 0
+	SQM_DIRTY=0
+	config_load cake-autorate
+	if [ -n "$1" ]; then
+		case "$1" in *[!A-Za-z0-9_]*) return 0 ;; *) ;; esac
+		[ "$(config_get "$1" TYPE)" = "instance" ] && sqm_stop_instance "$1"
+	else
+		config_foreach sqm_stop_instance instance
+	fi
+	sqm_commit
+}
+
+# At system shutdown (K-script) leave the sqm config alone: the K link only exists while
+# the service is enabled, so the next boot starts it and switches the queue on anyway;
+# switching it off here would only cost two flash writes per reboot.
+shutdown() {
+	SQM_SHUTDOWN=1
+	stop
 }
 
 # procd compares the new instance set with the running one and only restarts

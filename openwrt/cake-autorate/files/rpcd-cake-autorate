@@ -8,6 +8,9 @@
 RUN_DIR=/var/run/cake-autorate
 INIT=/etc/init.d/cake-autorate
 SCRIPT_PREFIX=/usr/lib/cake-autorate
+SQM_CONF=/etc/config/sqm
+# sqm_resolve_queue / sqm_queue_enable / sqm_queue_disable / sqm_apply (shared with the init script)
+. "$SCRIPT_PREFIX/sqm-lib.sh"
 
 reply_error() {
 	json_init
@@ -86,11 +89,9 @@ status_instance() {
 	# absent from UCI, so fall back to the global section and then to defaults.sh
 	# (otherwise cake_present/tc_bandwidth query an empty device name).
 	config_get dl_if "$id" dl_if
-	config_get ul_if "$id" ul_if
 	[ -n "$dl_if" ] || config_get dl_if global dl_if
-	[ -n "$ul_if" ] || config_get ul_if global ul_if
 	[ -n "$dl_if" ] || dl_if=$(sed -n 's/^dl_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
-	[ -n "$ul_if" ] || ul_if=$(sed -n 's/^ul_if=\([^ #	]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
+	ul_if=$(sqm_effective_ul_if "$id")
 
 	printf '%s"%s":{"enabled":%s,"running":%s,"pid":%d,"exit_code":%d' "$SEP" "$id" \
 		"$([ "$enabled" -eq 1 ] && echo true || echo false)" "$running" "$pid" "$exit_code"
@@ -135,9 +136,33 @@ status_instance() {
 	set -- $(cake_info "$dl_if"); dl_present=$1; dl_bw=$2
 	# shellcheck disable=SC2046
 	set -- $(cake_info "$ul_if"); ul_present=$1; ul_bw=$2
-	printf ',"cake_present":{"dl":%s,"ul":%s},"tc_bandwidth_kbps":{"dl":%d,"ul":%d}}' \
+	printf ',"cake_present":{"dl":%s,"ul":%s},"tc_bandwidth_kbps":{"dl":%d,"ul":%d}' \
 		"$([ "$dl_present" = 1 ] && echo true || echo false)" \
 		"$([ "$ul_present" = 1 ] && echo true || echo false)" "$dl_bw" "$ul_bw"
+	sqm_status_json "$id"
+	printf '}'
+}
+
+# shellcheck disable=SC2154 # SQM_QUEUE/SQM_LINKED are set by sqm_resolve_queue (sqm-lib.sh)
+# sqm_status_json <instance>: the instance's "sqm" member (linked queue, see sqm-lib.sh)
+sqm_status_json() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local installed=false queue=null linked=false enabled=false manage qdisc="" script="" iface=""
+	config_get_bool manage "$1" manage_sqm 0
+	if [ -f "$SQM_CONF" ]; then
+		installed=true
+		if sqm_resolve_queue "$1"; then
+			queue="\"$SQM_QUEUE\""
+			[ "$SQM_LINKED" -eq 1 ] && linked=true
+			sqm_is_true "$(uci -q get "sqm.$SQM_QUEUE.enabled")" && enabled=true
+			qdisc=$(uci -q get "sqm.$SQM_QUEUE.qdisc")
+			script=$(uci -q get "sqm.$SQM_QUEUE.script")
+			iface=$(uci -q get "sqm.$SQM_QUEUE.interface")
+		fi
+	fi
+	printf ',"sqm":{"installed":%s,"queue":%s,"linked":%s,"enabled":%s,"qdisc":"%s","script":"%s","interface":"%s","manage":%s}' \
+		"$installed" "$queue" "$linked" "$enabled" "$(json_str "$qdisc")" "$(json_str "$script")" "$(json_str "$iface")" \
+		"$([ "$manage" -eq 1 ] && echo true || echo false)"
 }
 
 do_defaults() {
@@ -437,6 +462,29 @@ do_sqm_sync_rates() {
 	json_dump
 }
 
+# sqm_control {"sqm_id","action":"enable"|"disable"}: switch an SQM queue on (with CAKE) or off.
+do_sqm_control() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local id action changed=0
+	json_load "$INPUT"
+	json_get_var id sqm_id
+	json_get_var action action
+	case "$id" in ''|*[!A-Za-z0-9_]*) reply_error "invalid sqm id" ;; *) ;; esac
+	sqm_is_queue "$id" || reply_error "no SQM instance '$id'"
+	case "$action" in
+		enable)  sqm_queue_enable "$id" && changed=1 ;;
+		disable) sqm_queue_disable "$id" && changed=1 ;;
+		*)       reply_error "invalid action" ;;
+	esac
+	if [ "$changed" -eq 1 ]; then
+		sqm_apply || reply_error "uci commit sqm failed"
+	fi
+	json_init
+	json_add_boolean ok 1
+	json_add_boolean changed "$changed"
+	json_dump
+}
+
 # ---- mqtt -----------------------------------------------------------------
 
 summary_enabled_instance() {
@@ -481,6 +529,7 @@ case "$1" in
 		  "system_info": {},
 		  "sqm_create": { "interface": "str", "dl_kbps": 0, "ul_kbps": 0 },
 		  "sqm_sync_rates": { "sqm_id": "str", "dl_kbps": 0, "ul_kbps": 0 },
+		  "sqm_control": { "sqm_id": "str", "action": "str" },
 		  "mqtt_status": {}
 		}
 		EOF
@@ -499,6 +548,7 @@ case "$1" in
 			system_info)      do_system_info ;;
 			sqm_create)       do_sqm_create ;;
 			sqm_sync_rates)   do_sqm_sync_rates ;;
+			sqm_control)      do_sqm_control ;;
 			mqtt_status)      do_mqtt_status ;;
 			*)                reply_error "unknown method" ;;
 		esac
