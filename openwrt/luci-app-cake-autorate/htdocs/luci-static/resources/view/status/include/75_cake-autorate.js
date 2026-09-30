@@ -13,7 +13,9 @@
  * has never been configured: LuCI's status page shows a section's box
  * whenever render() returns non-null content, so null keeps the widget
  * entirely hidden. Rates/OWD show '-' for an instance that is stopped or
- * whose status file is stale.
+ * whose status file is stale. The state chip comes from api.deriveState(),
+ * including "Not shaping — no CAKE qdisc" (no_cake) for a running instance
+ * whose interfaces have no CAKE qdisc.
  */
 
 function stateChip(inst) {

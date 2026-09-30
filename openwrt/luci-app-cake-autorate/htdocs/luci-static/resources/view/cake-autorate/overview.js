@@ -9,8 +9,9 @@
 
 /*
  * overview.js -- live status page: one card per configured instance, each
- * with a state/uptime/pid header, Start/Stop/Restart buttons, a warning
- * strip, a stats table and two rolling charts (bandwidth + OWD latency).
+ * with a state/uptime/pid header, Start/Stop/Restart buttons, an SQM line
+ * (queue / enabled / CAKE checks, Enable SQM action), a warning strip, a
+ * stats table and two rolling charts (bandwidth + OWD latency).
  * Polls `cake-autorate status` every 2s and updates the built DOM in place
  * (see buildCard()/updateCard()) rather than rebuilding cards each tick.
  */
@@ -48,12 +49,14 @@ var LOAD_LABEL = {
 
 /* Used whenever getStatus() didn't report on an instance at all (res.ok
  * === false, or the id is simply missing from res.instances). Renders as
- * a safe "no data" state and never trips the cake_present warning. */
+ * a safe "no data" state: no CAKE/SQM data, so the SQM line stays hidden
+ * and deriveState() never reports no_cake. */
 function fallbackInst() {
 	return {
 		enabled: false, running: false, pid: 0, exit_code: 0, stale: false,
 		status: null,
-		cake_present: { dl: true, ul: true },
+		cake_present: null,
+		sqm: undefined,
 		tc_bandwidth_kbps: { dl: 0, ul: 0 }
 	};
 }
@@ -87,15 +90,7 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
 			' ',
 			E('a', { 'href': L.url('admin/services/cake-autorate/instances') }, _('Go to the Instances page.'))
 		]));
-	var ifaces = { dl: (inst.status && inst.status.dl_if) || cfg(id, 'dl_if') || '-',
-	               ul: (inst.status && inst.status.ul_if) || cfg(id, 'ul_if') || '-' };
-
-	if (inst.cake_present) {
-		if (inst.cake_present.dl === false)
-			msgs.push(_('No CAKE qdisc on %s — is SQM enabled on this interface?').format(ifaces.dl));
-		if (inst.cake_present.ul === false)
-			msgs.push(_('No CAKE qdisc on %s — is SQM enabled on this interface?').format(ifaces.ul));
-	}
+	/* SQM / CAKE problems are shown on the card's SQM line (renderSqm). */
 
 	var method = cfg(id, 'pinger_method') || 'fping';
 	var pingerKey = PING_KEY_MAP[method] || method;
@@ -109,18 +104,105 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
 			msgs.push(_('Multi-WAN: probes may not go out through this WAN — set probe routing on the Instances page.'));
 	}
 
-	var sqmId = uci.get('cake-autorate', id, 'sqm_instance');
-	if (sqmId && sysinfo && sysinfo.sqm) {
-		for (var i = 0; i < sysinfo.sqm.length; i++) {
-			if (sysinfo.sqm[i].id === sqmId) {
-				if (!sysinfo.sqm[i].enabled)
-					msgs.push(_('The assigned SQM instance is disabled.'));
-				break;
-			}
+	return msgs;
+}
+
+/* ✓ / ✗ marks on the SQM line. Mid-tone colours that stay readable on both
+ * light and dark themes; the glyph carries the meaning on its own. A
+ * "neutral" item (an off-by-choice setting, not a problem) gets no colour. */
+var MARK_OK = '#3a9f3a', MARK_BAD = '#e0443a';
+
+function sqmItem(ok, text, neutral) {
+	return E('span', { 'style': 'white-space:nowrap' }, [
+		E('span', { 'style': 'font-weight:bold;color:' + (ok ? MARK_OK : (neutral ? 'inherit' : MARK_BAD)) },
+			[ ok ? '✓' : '✗' ]),
+		' ', text
+	]);
+}
+
+/* Confirm, then switch the queue on through rpcd sqm_control. No other
+ * dialog is open on this page, so ui.showModal() is safe here. */
+function confirmSqmEnable(view, queue) {
+	ui.showModal(_('Enable SQM'), [
+		E('p', {}, [ _('Switch SQM queue %s on with CAKE? This changes /etc/config/sqm and reloads SQM.').format(queue) ]),
+		E('div', { 'class': 'right' }, [
+			E('button', { 'class': 'btn', 'click': ui.hideModal }, _('Cancel')),
+			' ',
+			E('button', {
+				'class': 'btn cbi-button-positive',
+				'click': ui.createHandlerFn(view, function() {
+					return api.sqmControl(queue, 'enable').then(function(res) {
+						ui.hideModal();
+						if (res && res.ok)
+							ui.addNotification(null, E('p', {}, [ _('SQM queue %s switched on.').format(queue) ]), 'info');
+						else
+							ui.addNotification(null, E('p', {}, [ (res && res.error) || _('Action failed') ]), 'error');
+						return view.pollTick();
+					}, function(err) {
+						ui.hideModal();
+						ui.addNotification(null, E('p', {}, [ String((err && err.message) || err) ]), 'error');
+					});
+				})
+			}, _('Enable SQM'))
+		])
+	]);
+}
+
+/* The card's SQM line, from status.sqm and cake_present. status.sqm is null
+ * when the backend's sqm-lib.sh is missing and undefined on backends older
+ * than owrt4; the CAKE items are shown either way. */
+function renderSqm(el, view, id, inst) {
+	var sqm = inst.sqm, cp = inst.cake_present;
+	var items = [ E('strong', {}, _('SQM:')) ];
+	var action = null;
+
+	if (sqm === null) {
+		items.push(E('span', {}, [ _('status unavailable (sqm-lib.sh missing — reinstall cake-autorate)') ]));
+	} else if (sqm && !sqm.installed) {
+		items.push(sqmItem(false, _('sqm-scripts not installed')));
+	} else if (sqm) {
+		items.push(sqmItem(true, _('installed')));
+		if (!sqm.queue) {
+			var ulIf = (inst.status && inst.status.ul_if) || cfg(id, 'ul_if');
+			items.push(sqmItem(false, ulIf ? _('no queue on %s').format(ulIf) : _('no queue found')));
+			action = E('a', { 'href': L.url('admin/services/cake-autorate/instances') }, _('Create SQM instance…'));
+		} else {
+			items.push(sqmItem(true, (sqm.linked ? _('queue %s on %s (linked)') : _('queue %s on %s (auto-detected)'))
+				.format(sqm.queue, sqm.interface || '-')));
+			items.push(sqmItem(sqm.enabled, sqm.enabled ? _('enabled') : _('disabled')));
+			items.push(sqmItem(sqm.qdisc === 'cake', _('qdisc %s').format(sqm.qdisc || '-')));
+			items.push(sqmItem(sqm.manage, sqm.manage ? _('switched on/off by cake-autorate') : _('not managed by cake-autorate'), true));
+			if (!sqm.enabled || sqm.qdisc !== 'cake')
+				action = E('button', {
+					'class': 'btn cbi-button cbi-button-apply',
+					'click': function() { confirmSqmEnable(view, sqm.queue); }
+				}, _('Enable SQM'));
 		}
 	}
 
-	return msgs;
+	/* A stopped managed instance has its queue off on purpose: no CAKE is
+	 * expected then, so the CAKE items are left out. */
+	if (cp && (inst.running || !(sqm && sqm.manage))) {
+		var st = inst.status;
+		var dl = (st && st.dl_if) || cfg(id, 'dl_if') || '-';
+		var ul = (st && st.ul_if) || cfg(id, 'ul_if') || '-';
+		if (cp.dl !== false && cp.ul !== false)
+			items.push(sqmItem(true, _('CAKE on %s and %s').format(dl, ul)));
+		else {
+			if (cp.dl === false) items.push(sqmItem(false, _('no CAKE qdisc on %s').format(dl)));
+			if (cp.ul === false) items.push(sqmItem(false, _('no CAKE qdisc on %s').format(ul)));
+		}
+	}
+
+	if (action) items.push(action);
+	dom.content(el, items);
+	el.style.display = (items.length > 1) ? '' : 'none';
+}
+
+function sqmSignature(id, inst) {
+	var st = inst.status;
+	return JSON.stringify([ inst.sqm, inst.cake_present, !!inst.running,
+		(st && st.dl_if) || cfg(id, 'dl_if'), (st && st.ul_if) || cfg(id, 'ul_if') ]);
 }
 
 function renderWarnings(el, msgs) {
@@ -254,9 +336,11 @@ return view.extend({
 
 		var warningsEl = E('div', { 'class': 'alert-message warning', 'style': 'display:none' }, []);
 		var reflectorsEl = E('div', { 'style': 'font-size:12px;opacity:.75;margin-top:4px' }, '-');
+		var sqmEl = E('div', { 'style': 'display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin:4px 0' }, []);
 
 		renderWarnings(warningsEl, computeWarnings(id, inst, this.sysinfo, totalInstances));
 		renderReflectors(reflectorsEl, inst);
+		renderSqm(sqmEl, this, id, inst);
 
 		var root = E('div', { 'class': 'cbi-section', 'data-instance': id }, [
 			E('div', { 'style': 'display:flex;align-items:center;gap:10px;flex-wrap:wrap' }, [
@@ -272,6 +356,7 @@ return view.extend({
 					ctrlButton(_('Restart'), 'reload', 'restart')
 				])
 			]),
+			sqmEl,
 			warningsEl,
 			table,
 			chartsWrap,
@@ -288,6 +373,8 @@ return view.extend({
 			cells: { dl: dlRow.cells, ul: ulRow.cells },
 			warningsEl: warningsEl,
 			reflectorsEl: reflectorsEl,
+			sqmEl: sqmEl,
+			sqmSig: sqmSignature(id, inst),
 			chartsWrap: chartsWrap,
 			chartGroup: chartGroup,
 			bwChart: bwChart,
@@ -316,6 +403,13 @@ return view.extend({
 
 		renderWarnings(card.warningsEl, computeWarnings(id, inst, this.sysinfo, this.totalInstances));
 		renderReflectors(card.reflectorsEl, inst);
+		/* Rebuilt only when its inputs change, so the Enable SQM button is
+		 * not replaced under the pointer on every 2s tick. */
+		var sig = sqmSignature(id, inst);
+		if (sig !== card.sqmSig) {
+			card.sqmSig = sig;
+			renderSqm(card.sqmEl, this, id, inst);
+		}
 
 		var haveRates = !!(st && st.dl && st.ul);
 

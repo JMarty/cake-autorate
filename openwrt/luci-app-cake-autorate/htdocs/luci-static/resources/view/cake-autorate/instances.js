@@ -23,6 +23,10 @@
  * anything is saved. Anything else makes the instance exit at startup; the
  * rpcd status call then runs --check-config for that crashed instance and
  * the Overview page shows the result as a configuration error.
+ *
+ * SQM tab: linked queue, base-rate sync, manage_sqm (the init script switches
+ * the queue on at start / off at stop) and immediate Enable/Disable buttons
+ * (rpcd sqm_control, outside Save & Apply).
  */
 
 /* UCI pinger_method values use a hyphen; system_info.pingers keys use '_'. */
@@ -245,7 +249,8 @@ return view.extend({
 	},
 
 	/* Clone dialog: copies every option except the per-WAN ones (enabled,
-	 * interfaces, linked SQM queue); the copy is created disabled. */
+	 * interfaces, linked SQM queue, SQM management); the copy is created
+	 * disabled. */
 	showClone: function(map, sid) {
 		var nameInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': sid + '_2' });
 		/* Errors are shown inside the dialog: a page notification would be
@@ -276,7 +281,7 @@ return view.extend({
 							errorEl.style.display = '';
 							return;
 						}
-						var SKIP = { enabled: true, dl_if: true, ul_if: true, sqm_instance: true };
+						var SKIP = { enabled: true, dl_if: true, ul_if: true, sqm_instance: true, manage_sqm: true };
 						var src = uci.get('cake-autorate', sid) || {};
 						uci.add('cake-autorate', 'instance', newId);
 						for (var k in src)
@@ -297,6 +302,8 @@ return view.extend({
 	render: function() {
 		var self = this;
 		var sysinfo = this.sysinfo || {};
+		/* section_id -> refs of the open dialog's SQM action widget */
+		var sqmWidgets = {};
 
 		var m = new form.Map('cake-autorate', _('CAKE Autorate — Instances'),
 			_('One instance per shaped WAN. Values left empty use the global setting, else the built-in default shown as placeholder. Changes restart only the edited instance.'));
@@ -331,6 +338,7 @@ return view.extend({
 		};
 
 		s.tab('general', _('General'));
+		s.tab('sqm', _('SQM'));
 		s.tab('pinger', _('Pinger'));
 		s.tab('thresholds', _('Thresholds'));
 		s.tab('health', _('Reflector health'));
@@ -353,30 +361,6 @@ return view.extend({
 
 		opt(s, 'general', form.Flag, 'enabled', _('Enabled'), { default: '0', rmempty: false, editable: true, modalonly: null });
 
-		if (sysinfo.sqm_installed) {
-			var oSqm = opt(s, 'general', form.ListValue, 'sqm_instance', _('Linked SQM instance'));
-			oSqm.optional = true;
-			oSqm.value('', _('— not linked —'));
-			(sysinfo.sqm || []).forEach(function(q) {
-				oSqm.value(q.id, _('%s (%s)').format(q.id, q.interface));
-			});
-			oSqm.onchange = function(ev, section_id, value) {
-				var q = null, list = sysinfo.sqm || [];
-				for (var i = 0; i < list.length; i++)
-					if (list[i].id === value) { q = list[i]; break; }
-				if (!q) return;
-				var dlInput = this.section.getUIElement(section_id, 'dl_if');
-				var ulInput = this.section.getUIElement(section_id, 'ul_if');
-				if (dlInput) dlInput.setValue(q.ifb);
-				if (ulInput) ulInput.setValue(q.interface);
-			};
-		} else {
-			var oSqmMissing = s.taboption('general', form.DummyValue, '_sqm_missing', _('Linked SQM instance'),
-				_('sqm-scripts is not installed.'));
-			oSqmMissing.modalonly = true;
-			oSqmMissing.rmempty = true;
-		}
-
 		var oDlIf = opt(s, 'general', form.Value, 'dl_if', _('Download interface'), {
 			datatype: 'maxlength(15)',
 			description: _("download side interface, usually SQM's ifb4<wan>"),
@@ -390,7 +374,11 @@ return view.extend({
 			modalonly: null,
 			validate: ifValidate('ul_if', 'dl_if')
 		});
-		oUlIf.onchange = revalidate([ 'dl_if' ]);
+		var ulRevalidate = revalidate([ 'dl_if' ]);
+		oUlIf.onchange = function(ev, section_id) {
+			ulRevalidate.apply(this, arguments);
+			refreshSqmActions(this.section, section_id);
+		};
 
 		flagOpt(s, 'general', 'adjust_dl_shaper_rate', _('Adjust download shaper rate'));
 		flagOpt(s, 'general', 'adjust_ul_shaper_rate', _('Adjust upload shaper rate'));
@@ -414,8 +402,169 @@ return view.extend({
 			{ datatype: 'uinteger', validate: activeThrValidate });
 		oAct.onchange = revalidate(RATE_KEYS);
 
-		opt(s, 'general', form.Flag, 'sqm_sync_base_rates', _('Sync SQM base rates'),
+		/* ══════════════════════════════ sqm ══════════════════════════════ */
+
+		if (sysinfo.sqm_installed) {
+			var oSqm = opt(s, 'sqm', form.ListValue, 'sqm_instance', _('Linked SQM instance'));
+			oSqm.optional = true;
+			oSqm.value('', _('— not linked —'));
+			(sysinfo.sqm || []).forEach(function(q) {
+				oSqm.value(q.id, _('%s (%s)').format(q.id, q.interface));
+			});
+			oSqm.description = _('When not linked, the first SQM queue on the upload interface of this instance is used for the SQM status and for switching SQM on and off. Base rates are only synced to a linked queue.');
+			oSqm.onchange = function(ev, section_id, value) {
+				var q = sqmFind(value);
+				if (q) {
+					var dlInput = this.section.getUIElement(section_id, 'dl_if');
+					var ulInput = this.section.getUIElement(section_id, 'ul_if');
+					if (dlInput) dlInput.setValue(q.ifb);
+					if (ulInput) ulInput.setValue(q.interface);
+				}
+				refreshSqmActions(this.section, section_id);
+			};
+		} else {
+			var oSqmMissing = s.taboption('sqm', form.DummyValue, '_sqm_missing', _('Linked SQM instance'),
+				_('sqm-scripts is not installed.'));
+			oSqmMissing.modalonly = true;
+			oSqmMissing.rmempty = true;
+		}
+
+		opt(s, 'sqm', form.Flag, 'sqm_sync_base_rates', _('Sync SQM base rates'),
 			{ description: _('Set the linked SQM instance download/upload to the base rates whenever this instance is (re)started') });
+
+		if (sysinfo.sqm_installed) {
+			opt(s, 'sqm', form.Flag, 'manage_sqm', _('Let cake-autorate switch SQM on and off'),
+				{ description: _('When enabled, starting this instance switches the linked SQM queue on (with CAKE) and stopping it switches SQM off — there is then no traffic shaping at all while cake-autorate is stopped.') });
+
+			/* Manual "Enable/Disable SQM now" buttons. A UI-only DummyValue
+			 * (write/remove are no-ops) with its own widget: two buttons, the
+			 * queue they act on, and an inline result line. Confirmation is a
+			 * two-step click (the first click arms the button for a few
+			 * seconds) because ui.showModal() would replace this edit dialog,
+			 * losing unsaved edits; the result is shown inline because a page
+			 * notification sits behind the modal overlay (it is added as well,
+			 * so it is still there after the dialog is closed). */
+			var oSqmAct = s.taboption('sqm', form.DummyValue, '_sqm_actions', _('Switch SQM now'),
+				_('Acts immediately on the SQM queue shown here (linked, else auto-detected); it is not part of Save & Apply. Enable also selects CAKE (piece_of_cake.qos) when the queue uses another qdisc.'));
+			oSqmAct.modalonly = true;
+			oSqmAct.rmempty = true;
+			oSqmAct.renderWidget = function(section_id) {
+				var w = {
+					info: E('div', {}, ''),
+					result: E('div', { 'role': 'status', 'style': 'margin-top:4px' }, '')
+				};
+				w.enable = sqmActionButton(this.section, section_id, w, 'enable', _('Enable SQM now'), 'positive');
+				w.disable = sqmActionButton(this.section, section_id, w, 'disable', _('Disable SQM now'), 'negative');
+				sqmWidgets[section_id] = w;
+				/* Form values are not readable before the dialog is in the
+				 * DOM, so the first render uses the stored configuration. */
+				updateSqmActions(w, sqmQueueFor(null, section_id));
+				return E('div', {}, [ w.info, E('div', { 'style': 'display:flex;gap:6px;margin-top:4px' }, [ w.enable, w.disable ]), w.result ]);
+			};
+		}
+
+		/* ══ SQM action helpers (closures over sysinfo / uci / defaults) ══ */
+
+		function sqmFind(id) {
+			var list = sysinfo.sqm || [];
+			if (!id) return null;
+			for (var i = 0; i < list.length; i++)
+				if (list[i].id === id) return list[i];
+			return null;
+		}
+
+		/* The instance's effective SQM queue, same rule as the backend
+		 * (sqm-lib.sh sqm_resolve_queue): sqm_instance when it names an
+		 * existing queue, else the first queue whose interface is the
+		 * effective ul_if (instance -> global -> built-in default). With a
+		 * section, unsaved values from the open dialog are used. */
+		function sqmQueueFor(section, section_id) {
+			function val(key) {
+				var v = null;
+				if (section) {
+					try { v = section.formvalue(section_id, key); } catch (e) { v = null; }
+				}
+				if (v == null) v = uci.get('cake-autorate', section_id, key);
+				return v;
+			}
+			var q = sqmFind(val('sqm_instance'));
+			if (q) return { q: q, linked: true };
+			var ul = val('ul_if');
+			if (ul == null || ul === '') ul = uci.get('cake-autorate', 'global', 'ul_if');
+			if (ul == null || ul === '') ul = (defaults.ul_if || {}).value;
+			var list = sysinfo.sqm || [];
+			for (var i = 0; ul && i < list.length; i++)
+				if (list[i].interface === ul) return { q: list[i], linked: false };
+			return null;
+		}
+
+		function updateSqmActions(w, res) {
+			w.queue = res ? res.q.id : null;
+			w.enable.disabled = w.disable.disabled = !!(!res || w.busy);
+			if (!res) {
+				dom.content(w.info, [ _('No SQM queue is linked or found on the upload interface — create or link one first.') ]);
+				return;
+			}
+			dom.content(w.info, [ _('Queue %s on %s (%s): %s, qdisc %s').format(res.q.id, res.q.interface,
+				res.linked ? _('linked') : _('auto-detected'),
+				res.q.enabled ? _('enabled') : _('disabled'), res.q.qdisc || '-') ]);
+		}
+
+		function refreshSqmActions(section, section_id) {
+			var w = sqmWidgets[section_id];
+			if (w) updateSqmActions(w, sqmQueueFor(section, section_id));
+		}
+
+		function sqmActionButton(section, section_id, w, action, label, style) {
+			var armTimer = null, armedFor = null;
+			var btn = E('button', {
+				'class': 'btn cbi-button cbi-button-' + style,
+				'type': 'button',
+				'click': function(ev) {
+					ev.preventDefault();
+					if (w.busy) return;
+					var res = sqmQueueFor(section, section_id);
+					updateSqmActions(w, res);
+					if (!res) return;
+					if (!armTimer || armedFor !== res.q.id) {
+						/* First click (or the target queue changed since): arm for
+						 * 5s; the info line above names the queue it will act on. */
+						if (armTimer) window.clearTimeout(armTimer);
+						armedFor = res.q.id;
+						btn.textContent = _('Click again to confirm');
+						armTimer = window.setTimeout(function() { armTimer = null; btn.textContent = label; }, 5000);
+						return;
+					}
+					window.clearTimeout(armTimer);
+					armTimer = null;
+					btn.textContent = label;
+					w.busy = true;
+					w.enable.disabled = w.disable.disabled = true;
+					dom.content(w.result, [ _('Working…') ]);
+					var qid = res.q.id;
+					return api.sqmControl(qid, action).then(function(r) {
+						var msg, ok = !!(r && r.ok);
+						if (ok) {
+							res.q.enabled = (action === 'enable');
+							if (action === 'enable' && res.q.qdisc !== 'cake') res.q.qdisc = 'cake';
+							msg = (action === 'enable') ? _('SQM queue %s switched on.').format(qid) : _('SQM queue %s switched off.').format(qid);
+							if (r.changed === false) msg = _('SQM queue %s: nothing to change.').format(qid);
+						} else {
+							msg = _('SQM queue %s: %s').format(qid, (r && r.error) || _('Action failed'));
+						}
+						return { msg: msg, cls: ok ? 'info' : 'error' };
+					}, function(err) {
+						return { msg: _('SQM queue %s: %s').format(qid, String((err && err.message) || err)), cls: 'error' };
+					}).then(function(out) {
+						w.busy = false;
+						dom.content(w.result, [ out.msg ]);
+						ui.addNotification(null, E('p', {}, [ out.msg ]), out.cls);
+						refreshSqmActions(section, section_id);
+					});
+				}
+			}, label);
+			return btn;
+		}
 
 		/* ══════════════════════════════ pinger ══════════════════════════════ */
 

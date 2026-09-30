@@ -10,6 +10,7 @@ var callLogExport = rpc.declare({ object: 'cake-autorate', method: 'log_export',
 var callLogReset = rpc.declare({ object: 'cake-autorate', method: 'log_reset', params: ['id'], expect: { '': {} } });
 var callSystemInfo = rpc.declare({ object: 'cake-autorate', method: 'system_info', expect: { '': {} } });
 var callSqmCreate = rpc.declare({ object: 'cake-autorate', method: 'sqm_create', params: ['interface', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
+var callSqmControl = rpc.declare({ object: 'cake-autorate', method: 'sqm_control', params: ['sqm_id', 'action'], expect: { '': {} } });
 var callMqttStatus = rpc.declare({ object: 'cake-autorate', method: 'mqtt_status', expect: { '': {} } });
 var callServiceControl = rpc.declare({ object: 'cake-autorate', method: 'service_control', params: ['service', 'action'], expect: { '': {} } });
 
@@ -22,6 +23,7 @@ return baseclass.extend({
 	logReset: callLogReset,
 	getSystemInfo: callSystemInfo,
 	sqmCreate: callSqmCreate,
+	sqmControl: callSqmControl,
 	getMqttStatus: callMqttStatus,
 	serviceControl: callServiceControl,
 
@@ -66,11 +68,17 @@ return baseclass.extend({
 	 * !running + enabled + exitcode -> crashed
 	 * !running + enabled            -> stopped
 	 * !enabled                      -> disabled
+	 * running + no CAKE qdisc on dl_if or ul_if -> no_cake (overrides the
+	 *   above, except waiting_for_if: a missing interface also has no qdisc)
 	 */
 	deriveState: function(inst) {
 		if (inst.running) {
-			if (!inst.status || inst.stale) return 'starting';
-			return inst.status.state || 'running';
+			var live = (inst.status && !inst.stale) ? inst.status : null;
+			var state = live ? (live.state || 'running') : 'starting';
+			if (state !== 'waiting_for_if' && inst.cake_present &&
+			    (inst.cake_present.dl === false || inst.cake_present.ul === false))
+				return 'no_cake';
+			return state;
 		}
 		if (inst.enabled) return (inst.exit_code && inst.exit_code !== 0) ? 'crashed' : 'stopped';
 		return 'disabled';
@@ -83,6 +91,7 @@ return baseclass.extend({
 		waiting_for_if: { color: '#c07700', label: _('Waiting for interface') },
 		starting:       { color: '#c07700', label: _('Starting…') },
 		crashed:        { color: '#cc0000', label: _('Crashed / restarting') },
+		no_cake:        { color: '#cc0000', label: _('Not shaping — no CAKE qdisc') },
 		stopped:        { color: '#888888', label: _('Stopped') },
 		disabled:       { color: '#888888', label: _('Disabled') }
 	}
