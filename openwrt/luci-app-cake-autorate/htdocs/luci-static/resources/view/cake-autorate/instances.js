@@ -517,6 +517,12 @@ return view.extend({
 
 		function sqmActionButton(section, section_id, w, action, label, style) {
 			var armTimer = null, armedFor = null;
+			function disarm() {
+				if (armTimer) window.clearTimeout(armTimer);
+				armTimer = null;
+				armedFor = null;
+				btn.textContent = label;
+			}
 			var btn = E('button', {
 				'class': 'btn cbi-button cbi-button-' + style,
 				'type': 'button',
@@ -529,15 +535,16 @@ return view.extend({
 					if (!armTimer || armedFor !== res.q.id) {
 						/* First click (or the target queue changed since): arm for
 						 * 5s; the info line above names the queue it will act on. */
-						if (armTimer) window.clearTimeout(armTimer);
+						/* Only one button can be armed at a time. */
+						var other = (action === 'enable') ? w.disable : w.enable;
+						if (other && other.disarm) other.disarm();
+						disarm();
 						armedFor = res.q.id;
 						btn.textContent = _('Click again to confirm');
-						armTimer = window.setTimeout(function() { armTimer = null; btn.textContent = label; }, 5000);
+						armTimer = window.setTimeout(disarm, 5000);
 						return;
 					}
-					window.clearTimeout(armTimer);
-					armTimer = null;
-					btn.textContent = label;
+					disarm();
 					w.busy = true;
 					w.enable.disabled = w.disable.disabled = true;
 					dom.content(w.result, [ _('Working…') ]);
@@ -563,6 +570,7 @@ return view.extend({
 					});
 				}
 			}, label);
+			btn.disarm = disarm;
 			return btn;
 		}
 

@@ -169,10 +169,16 @@ function renderSqm(el, view, id, inst) {
 		} else {
 			items.push(sqmItem(true, (sqm.linked ? _('queue %s on %s (linked)') : _('queue %s on %s (auto-detected)'))
 				.format(sqm.queue, sqm.interface || '-')));
-			items.push(sqmItem(sqm.enabled, sqm.enabled ? _('enabled') : _('disabled')));
-			items.push(sqmItem(sqm.qdisc === 'cake', _('qdisc %s').format(sqm.qdisc || '-')));
+			/* A managed queue is switched off on purpose while the instance
+			 * is stopped: neutral mark, no Enable SQM button. */
+			var offOnPurpose = !inst.running && sqm.manage && !sqm.enabled;
+			if (offOnPurpose)
+				items.push(sqmItem(false, _('disabled (switched off while cake-autorate is stopped)'), true));
+			else
+				items.push(sqmItem(sqm.enabled, sqm.enabled ? _('enabled') : _('disabled')));
+			items.push(sqmItem(sqm.qdisc === 'cake', _('qdisc %s').format(sqm.qdisc || '-'), offOnPurpose));
 			items.push(sqmItem(sqm.manage, sqm.manage ? _('switched on/off by cake-autorate') : _('not managed by cake-autorate'), true));
-			if (!sqm.enabled || sqm.qdisc !== 'cake')
+			if (!offOnPurpose && (!sqm.enabled || sqm.qdisc !== 'cake'))
 				action = E('button', {
 					'class': 'btn cbi-button cbi-button-apply',
 					'click': function() { confirmSqmEnable(view, sqm.queue); }
