@@ -13,8 +13,13 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
    option, UI, install/upgrade step, version) must update README.md (fork
    section) and, if it affects installation, INSTALLATION.md, plus a
    CHANGELOG.md entry under "OpenWrt package / LuCI app".
-3. Never change the upstream rate-control algorithm. Fork hooks in
-   cake-autorate.sh / lib.sh / defaults.sh carry a `# fork:` comment.
+3. Never change the upstream rate-control algorithm. Mark every NEW fork
+   hook in cake-autorate.sh / lib.sh / defaults.sh with a `# fork:` comment.
+   Existing fork hooks predating this rule: the status.json writer (lib.sh
+   build_status_json/write_status_file*), --check-config (cake-autorate.sh),
+   the cleanup run-dir guard, status_file_interval_ms (defaults.sh);
+   `git diff ac75f49 -- cake-autorate.sh lib.sh defaults.sh` shows the full
+   fork delta against upstream.
 4. The user works with the superpowers plugin; its plans/specs live in
    docs/superpowers/ and .superpowers/ which are gitignored (local only).
 
@@ -35,8 +40,9 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   (`/root/cake-autorate/config.*.sh`, incl. MQTT credentials) into UCI.
 - One procd instance per WAN (`cake-autorate.init`); stopping or
   reconfiguring one instance leaves the others running (mwan3-friendly).
-- Live status: each instance writes `/var/run/cake-autorate/<id>/status.json`
-  about once a second.
+- Live status: each instance writes `/var/run/cake-autorate/<id>/status.json`,
+  written at a configurable interval (status_file_interval_ms, default
+  1000 ms; 0 disables).
 - `cake-autorate.sh --check-config <file>` validates settings before restart.
 - MQTT publisher as a separate service (`mqtt-publisher.init`) configured
   from UCI.
@@ -52,7 +58,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 ## Layout
 | Path | Responsibility |
 |------|----------------|
-| cake-autorate.sh, lib.sh, defaults.sh | Upstream core; fork hooks marked `# fork:` |
+| cake-autorate.sh, lib.sh, defaults.sh | Upstream core; new fork hooks marked `# fork:` |
 | openwrt/cake-autorate/Makefile | Backend package definition |
 | openwrt/cake-autorate/files/cake-autorate.config | Default UCI config |
 | openwrt/cake-autorate/files/cake-autorate.defaults | uci-defaults (first-install migration) |
