@@ -128,20 +128,21 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - Quick router test of LuCI files: scp -O the changed file(s) to
   /www/luci-static/resources/... then Ctrl+F5.
 - Release: bump PKG_RELEASE / PKG_VERSION, update CHANGELOG + README, tag
-  `v<core>-owrt<N>`, CI attaches .apk/.ipk to the release and a `checksums` job
-  (needs both builds, tags only) adds SHA256SUMS. Refresh the pinned
-  `openwrt/gh-action-sdk` SHA deliberately (`gh api repos/openwrt/gh-action-sdk/commits/main --jq .sha`).
+  `v<core>-owrt<N>`. The build matrix only uploads artifacts (contents: read);
+  a tag-only `release` job (the only job with contents: write) downloads them,
+  computes SHA256SUMS and attaches packages + SHA256SUMS in one step. Refresh
+  the pinned action SHAs deliberately (`gh api repos/openwrt/gh-action-sdk/commits/main --jq .sha`,
+  `gh api repos/softprops/action-gh-release/commits/v2 --jq .sha`).
 
 ## Known limitations / backlog
 - No translations yet (no po/ directory); strings are all wrapped in _().
 - Packages are unsigned (apk needs --allow-untrusted; SHA256SUMS published).
 - --check-config does not yet cover post-exit checks (log_file_buffer_timeout_ms < 50,
   reflector syntax/duplicates).
-- rpcd: /tmp/cake-autorate-export created with default umask, symlink not
-  rejected; sync_sqm_rates falls back to defaults on non-integer base rates;
-  `uci commit sqm` also commits unrelated staged sqm edits; service_control
-  returns ok on init failure.
+- rpcd/init: `uci commit sqm` also commits unrelated staged sqm edits;
+  service_control returns ok on init failure; check_config is not cached
+  (one --check-config run per crashed instance per poll); sqm sync reloads
+  all of sqm, not just the linked interface.
 - Tests: no coverage for rpcd runtime paths, tc reset, log override fallback,
   LuCI JS helpers.
-- CI: softprops/action-gh-release tag not pinned; node --check step passes on an
-  empty file list.
+- CI: node --check step passes on an empty file list.
