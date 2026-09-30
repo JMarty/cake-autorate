@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # REPO_ROOT is exported by run-tests.sh
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/mqtt"
-export PROCD_LOG=$(mktemp)
+PROCD_LOG=$(mktemp); export PROCD_LOG
 export CAKE_AUTORATE_SCRIPT_PREFIX="${REPO_ROOT}"
 cfg_dir=$(mktemp -d)
 export CAKE_AUTORATE_CONFIG_PREFIX="${cfg_dir}"

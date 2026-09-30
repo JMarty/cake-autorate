@@ -85,8 +85,9 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   `/tmp/cake-autorate-export/*` (cgi-io checks the former first). The ACL
   grants no `luci`/`file`/`service` ubus objects and no `sqm`/`mwan3` UCI
   access.
-- CI: shellcheck, offline test suite, OpenWrt SDK package builds, releases
-  from tags.
+- CI: shellcheck (core and tests at -S warning, package scripts), node --check of
+  LuCI JS, offline test suite, OpenWrt SDK package builds (SDK action pinned by
+  SHA, least-privilege permissions), releases + SHA256SUMS from tags.
 
 ## Layout
 | Path | Responsibility |
@@ -111,12 +112,14 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 
 ## Dev workflow
 - Tests: `wsl bash openwrt/tests/run-tests.sh` (Windows) / `bash openwrt/tests/run-tests.sh`
-- Shellcheck: same commands as .github/workflows/openwrt-packages.yml
+- Shellcheck: same commands as .github/workflows/openwrt-packages.yml (core: `shellcheck -x cake-autorate.sh lib.sh -S warning`; tests: `shellcheck -x openwrt/tests/*.sh -S warning`)
 - JS syntax: `node --check <file>` for every LuCI JS file
 - Quick router test of LuCI files: scp -O the changed file(s) to
   /www/luci-static/resources/... then Ctrl+F5.
 - Release: bump PKG_RELEASE / PKG_VERSION, update CHANGELOG + README, tag
-  `v<core>-owrt<N>`, CI attaches .apk/.ipk + SHA256SUMS to the GitHub release.
+  `v<core>-owrt<N>`, CI attaches .apk/.ipk to the release and a `checksums` job
+  (needs both builds, tags only) adds SHA256SUMS. Refresh the pinned
+  `openwrt/gh-action-sdk` SHA deliberately (`gh api repos/openwrt/gh-action-sdk/commits/main --jq .sha`).
 
 ## Known limitations / backlog
 - Pre-release hardening in progress — see the plan in docs/superpowers/plans/ (local only).

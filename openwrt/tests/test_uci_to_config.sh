@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # REPO_ROOT is exported by run-tests.sh
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
@@ -24,7 +25,7 @@ assert_contains "basic: instance overrides global" $'\nno_pingers="3"\n' "${c}"
 assert_not_contains "basic: enabled filtered" "enabled=" "${c}"
 assert_not_contains "basic: sqm_instance filtered" "sqm_instance" "${c}"
 [ -f "${f}.tmp" ] && fail "basic: tmp removed" || pass "basic: tmp removed"
-out=$(bash "${REPO_ROOT}/cake-autorate.sh" --check-config "${f}" 2>&1); rc=$?
+bash "${REPO_ROOT}/cake-autorate.sh" --check-config "${f}" >/dev/null 2>&1; rc=$?
 assert_eq "basic: passes --check-config" 0 "${rc}"
 
 bash "${C}" wan "${out_dir}/custom.sh"
@@ -36,7 +37,7 @@ c=$(cat "${out_dir}/config.flt.sh")
 assert_contains "float: integer -> float" $'\ndl_owd_delta_delay_thr_ms="30.0"\n' "${c}"
 assert_contains "float: real float kept" $'\nul_owd_delta_delay_thr_ms="12.5"\n' "${c}"
 assert_contains "float: integer key untouched" $'\nmin_dl_shaper_rate_kbps="5000"\n' "${c}"
-out=$(bash "${REPO_ROOT}/cake-autorate.sh" --check-config "${out_dir}/config.flt.sh" 2>&1); rc=$?
+bash "${REPO_ROOT}/cake-autorate.sh" --check-config "${out_dir}/config.flt.sh" >/dev/null 2>&1; rc=$?
 assert_eq "float: passes --check-config" 0 "${rc}"
 
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/override"

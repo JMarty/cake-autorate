@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # REPO_ROOT is exported by run-tests.sh
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/basic"
-export PROCD_LOG=$(mktemp)
+PROCD_LOG=$(mktemp); export PROCD_LOG
 export CAKE_AUTORATE_SCRIPT_PREFIX="${REPO_ROOT}"
 export CAKE_AUTORATE_FUNCTIONS_SH="${PWD}/shim/openwrt-shim.sh"
 cfg_dir=$(mktemp -d)
@@ -44,6 +45,7 @@ uci() {
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/sqmsync"
 rm -rf "${cfg_dir}"
 cfg_dir=$(mktemp -d)
+# shellcheck disable=SC2034 # read by the sourced init script's start_service
 CONFIG_PREFIX="${cfg_dir}"
 export CAKE_AUTORATE_CONFIG_PREFIX="${cfg_dir}"
 : > "${PROCD_LOG}"

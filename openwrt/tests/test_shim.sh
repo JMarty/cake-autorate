@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # v/e/t/p are assigned by the shim config_get
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
 export UCI_CONFIG_DIR="${PWD}/fixtures/uci/basic"
-export PROCD_LOG=$(mktemp)
+PROCD_LOG=$(mktemp); export PROCD_LOG
 . ./shim/openwrt-shim.sh
 
 config_load cake-autorate

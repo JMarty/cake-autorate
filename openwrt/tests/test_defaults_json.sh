@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # REPO_ROOT is exported by run-tests.sh
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
@@ -19,6 +20,6 @@ assert_eq "quotes stripped" "fping" "$(echo "${out}" | jq -r .pinger_method.valu
 assert_eq "key count sane" "true" "$(echo "${out}" | jq '[keys[]] | length > 50' )"
 assert_not_contains "no comment-only keys" '"#' "$(echo "${out}" | jq -r 'keys[]' | tr '\n' ' ')"
 
-err=$(bash "${P}" /nonexistent 2>&1); rc=$?
+bash "${P}" /nonexistent >/dev/null 2>&1; rc=$?
 assert_eq "missing file: exit 1" 1 "${rc}"
 report

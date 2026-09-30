@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154 # REPO_ROOT is exported by run-tests.sh
+# shellcheck disable=SC2034 # globals are consumed by write_status_file in lib.sh; PATH is emptied deliberately
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 . ./assert.sh
@@ -29,6 +31,7 @@ f="${run_path}/status.json"
 [ -e "${f}.tmp" ] && fail "no tmp file" || pass "no tmp file"
 jq -e '.updated_us > 0' "${f}" >/dev/null && pass "updated_us" || fail "updated_us" "$(cat "${f}")"
 # The writer must not fork/exec anything: run it with an empty PATH.
+# shellcheck disable=SC2123 # deliberate: prove the writer needs no external commands
 ( PATH=/nonexistent; write_status_file ) && pass "writer runs without external commands" || fail "writer runs without external commands"
 jq -e . "${f}" >/dev/null && pass "still valid json" || fail "still valid json"
 instance_id='we"ird\id'

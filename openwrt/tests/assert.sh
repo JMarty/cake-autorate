@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Assertion helpers for cake-autorate OpenWrt tests. Source from a test script.
 TESTS_RUN=0
 TESTS_FAILED=0
