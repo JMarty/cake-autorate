@@ -333,7 +333,15 @@ var TimeSeriesChart = baseclass.extend({
 		});
 		dom.content(this.tip, rows);
 		this.tip.style.display = '';
-		var frac = x / W, pw = this.plot.clientWidth, tw = this.tip.offsetWidth;
+		var frac = x / W, pw = this.plot.clientWidth;
+		this.tip.style.whiteSpace = 'nowrap';
+		this.tip.style.maxWidth = '';
+		var tw = this.tip.offsetWidth;
+		if (tw > pw) {
+			this.tip.style.whiteSpace = 'normal';
+			this.tip.style.maxWidth = pw + 'px';
+			tw = this.tip.offsetWidth;
+		}
 		var left = frac * pw + 8;
 		if (left + tw > pw) left = frac * pw - tw - 8;
 		left = Math.max(0, Math.min(pw - tw, left));
@@ -505,13 +513,15 @@ var TimeSeriesChart = baseclass.extend({
 		});
 		/* Touch: tap/slide shows values (zoom via the range buttons). */
 		this.svg.addEventListener('touchstart', function(ev) {
+			clearTimeout(self.group.touchTimer);
 			if (ev.touches.length === 1) self.group.hover(timeAt(ev.touches[0]).t);
 		}, { passive: true });
 		this.svg.addEventListener('touchmove', function(ev) {
 			if (ev.touches.length === 1) self.group.hover(timeAt(ev.touches[0]).t);
 		}, { passive: true });
 		function clearSoon() {
-			setTimeout(function() { self.group.hover(null); }, 1500);
+			clearTimeout(self.group.touchTimer);
+			self.group.touchTimer = setTimeout(function() { self.group.hover(null); }, 1500);
 		}
 		this.svg.addEventListener('touchend', clearSoon);
 		this.svg.addEventListener('touchcancel', clearSoon);

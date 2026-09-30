@@ -69,7 +69,6 @@ return baseclass.extend({
 		for (var i = 0; i < ids.length; i++) {
 			var id = ids[i];
 			var inst = res.instances[id];
-			var st = inst.status;
 
 			rows.push(E('tr', { 'class': 'tr' }, [
 				E('td', { 'class': 'td' }, id),

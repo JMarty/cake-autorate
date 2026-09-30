@@ -389,7 +389,7 @@ return view.extend({
 			}, label);
 		}
 
-		var versionLabel = E('span', { 'style': 'color:#888;font-size:12px;margin-left:8px' },
+		var versionLabel = E('span', { 'style': 'opacity:.7;font-size:12px;margin-left:8px' },
 			status.version || '');
 		this.versionLabel = versionLabel;
 
