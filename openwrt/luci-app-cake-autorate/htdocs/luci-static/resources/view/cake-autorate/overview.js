@@ -398,7 +398,7 @@ return view.extend({
 		}
 
 		var versionLabel = E('span', { 'style': 'opacity:.7;font-size:12px;margin-left:8px' },
-			status.version || '');
+			[ status.version || '' ]);
 		this.versionLabel = versionLabel;
 
 		var header = E('div', { 'class': 'cbi-section' }, [

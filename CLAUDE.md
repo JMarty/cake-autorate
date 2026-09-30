@@ -30,6 +30,9 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   CHANGELOG lists it as "v3.5.0-owrt4 (unreleased)". Final whole-branch
   review fix wave done (check-config log side effect, export dir hardening,
   strict SQM rate sync, r2-backend warning, CI release job, docs).
+  Parked review items also fixed: interface clash check ignores disabled
+  instances, unused check_config ACL grant / api.checkConfig removed
+  (rpcd method kept for CLI), overview version label is a text node.
 - Next (Task 10, with the user): on-router checks — incl. a crashed
   instance with log_to_file=1 does not grow /var/log/cake-autorate.log
   (rpcd --check-config polling); `log_export` refuses a pre-made symlinked

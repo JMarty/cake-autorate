@@ -5,7 +5,6 @@
 var callStatus = rpc.declare({ object: 'cake-autorate', method: 'status', expect: { '': {} } });
 var callDefaults = rpc.declare({ object: 'cake-autorate', method: 'defaults', expect: { '': {} } });
 var callInstanceControl = rpc.declare({ object: 'cake-autorate', method: 'instance_control', params: ['id', 'action'], expect: { '': {} } });
-var callCheckConfig = rpc.declare({ object: 'cake-autorate', method: 'check_config', params: ['id'], expect: { '': {} } });
 var callLogTail = rpc.declare({ object: 'cake-autorate', method: 'log_tail', params: ['id', 'lines'], expect: { '': {} } });
 var callLogExport = rpc.declare({ object: 'cake-autorate', method: 'log_export', params: ['id'], expect: { '': {} } });
 var callLogReset = rpc.declare({ object: 'cake-autorate', method: 'log_reset', params: ['id'], expect: { '': {} } });
@@ -18,7 +17,6 @@ return baseclass.extend({
 	getStatus: callStatus,
 	getDefaults: callDefaults,
 	instanceControl: callInstanceControl,
-	checkConfig: callCheckConfig,
 	logTail: callLogTail,
 	logExport: callLogExport,
 	logReset: callLogReset,

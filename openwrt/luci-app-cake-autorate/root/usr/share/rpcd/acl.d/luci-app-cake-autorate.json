@@ -4,7 +4,7 @@
 		"read": {
 			"uci": [ "cake-autorate" ],
 			"ubus": {
-				"cake-autorate": [ "status", "defaults", "check_config", "log_tail", "system_info", "mqtt_status" ]
+				"cake-autorate": [ "status", "defaults", "log_tail", "system_info", "mqtt_status" ]
 			},
 			"cgi-io": [ "download" ],
 			"file": {

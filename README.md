@@ -99,9 +99,10 @@ After installing `luci-app-cake-autorate`, the pages are under
   the built-in default. On/off
   settings have three states (Default / On / Off). Invalid combinations
   (e.g. min > base, the same interface for download and upload, an
-  interface already used by another instance) are rejected before
-  saving. A clone is created disabled and without interfaces, so it
-  cannot collide with the original. **Create SQM instance…** sets up
+  interface already used by another enabled instance) are rejected before
+  saving. A clone is created disabled and without interfaces; disabled
+  instances are ignored by the interface check, so a clone does not
+  block the original. **Create SQM instance…** sets up
   a matching SQM queue for a WAN interface.
 - **Log** — view the log of an instance, filter by record type,
   auto-refresh, reset, and export (download) the full log.

@@ -139,9 +139,10 @@ function activeThrValidate(section_id, value) {
 	return true;
 }
 
-/* Interface fields: unique across instances and dl_if != ul_if. Compares
- * effective values (instance -> global -> built-in default), so two instances
- * that both inherit the same interface are caught too. */
+/* Interface fields: unique across enabled instances and dl_if != ul_if.
+ * Compares effective values (instance -> global -> built-in default), so two
+ * instances that both inherit the same interface are caught too. Disabled
+ * instances (e.g. a fresh clone) are ignored. */
 function ifValidate(ownKey, otherKey) {
 	return function(section_id, value) {
 		var own = effectiveRaw(this, section_id, ownKey, ownKey, value);
@@ -149,6 +150,7 @@ function ifValidate(ownKey, otherKey) {
 		var others = uci.sections('cake-autorate', 'instance');
 		for (var i = 0; i < others.length; i++) {
 			if (others[i]['.name'] === section_id) continue;
+			if (others[i].enabled !== '1') continue;
 			var theirs = others[i][ownKey];
 			if (theirs == null || theirs === '') theirs = uci.get('cake-autorate', 'global', ownKey);
 			if (theirs == null || theirs === '') theirs = (defaults[ownKey] || {}).value;
