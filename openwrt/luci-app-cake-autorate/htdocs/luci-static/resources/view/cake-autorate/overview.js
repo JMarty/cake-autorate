@@ -112,10 +112,11 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
  * "neutral" item (an off-by-choice setting, not a problem) gets no colour. */
 var MARK_OK = '#3a9f3a', MARK_BAD = '#e0443a';
 
+/* ok → green ✓; neutral (a valid choice, not a fault) → plain ○; else red ✗. */
 function sqmItem(ok, text, neutral) {
-	return E('span', { 'style': 'white-space:nowrap' }, [
+	return E('span', { 'style': 'white-space:nowrap;margin-right:14px' }, [
 		E('span', { 'style': 'font-weight:bold;color:' + (ok ? MARK_OK : (neutral ? 'inherit' : MARK_BAD)) },
-			[ ok ? '✓' : '✗' ]),
+			[ ok ? '✓' : (neutral ? '○' : '✗') ]),
 		' ', text
 	]);
 }
@@ -153,7 +154,7 @@ function confirmSqmEnable(view, queue) {
  * than owrt4; the CAKE items are shown either way. */
 function renderSqm(el, view, id, inst) {
 	var sqm = inst.sqm, cp = inst.cake_present;
-	var items = [ E('strong', {}, _('SQM:')) ];
+	var items = [ E('strong', { 'style': 'margin-right:8px' }, _('SQM:')) ];
 	var action = null;
 
 	if (sqm === null) {
