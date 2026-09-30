@@ -32,8 +32,8 @@ function latencyGuides(st) {
 			guides.push({ value: dl, label: label, color: dlColor });
 			return;
 		}
-		if (dl != null) guides.push({ value: dl, label: _('DL') + ' ' + label, color: dlColor });
-		if (ul != null) guides.push({ value: ul, label: _('UL') + ' ' + label, color: ulColor });
+		if (dl != null) guides.push({ value: dl, label: _('DL %s').format(label), color: dlColor });
+		if (ul != null) guides.push({ value: ul, label: _('UL %s').format(label), color: ulColor });
 	}
 	pair('delay_thr_ms', _('delay threshold'), '#cc0000', '#e8697a');
 	pair('max_adjust_down_thr_ms', _('max adjust-down threshold'), '#e08800', '#f2c14e');
@@ -58,6 +58,12 @@ function fallbackInst() {
 	};
 }
 
+/* Status data is only trustworthy while the instance runs and its status
+ * file is fresh; otherwise show "no data" rather than the last values. */
+function liveStatus(inst) {
+	return (inst.running && !inst.stale) ? inst.status : null;
+}
+
 function ifaceText(id, inst) {
 	var st = inst.status;
 	var dl = (st && st.dl_if) || uci.get('cake-autorate', id, 'dl_if') || '-';
@@ -67,6 +73,12 @@ function ifaceText(id, inst) {
 
 function computeWarnings(id, inst, sysinfo, totalInstances) {
 	var msgs = [];
+	if (inst.config_errors && inst.config_errors.length)
+		msgs.push(E('span', {}, [
+			_('Configuration error — the instance cannot start: %s').format(inst.config_errors.join('; ')),
+			' ',
+			E('a', { 'href': L.url('admin/services/cake-autorate/instances') }, _('Go to the Instances page.'))
+		]));
 	var ifaces = { dl: (inst.status && inst.status.dl_if) || uci.get('cake-autorate', id, 'dl_if') || '-',
 	               ul: (inst.status && inst.status.ul_if) || uci.get('cake-autorate', id, 'ul_if') || '-' };
 
@@ -104,12 +116,12 @@ function computeWarnings(id, inst, sysinfo, totalInstances) {
 }
 
 function renderWarnings(el, msgs) {
-	dom.content(el, msgs.length ? msgs.map(function(m) { return E('p', {}, m); }) : '');
+	dom.content(el, msgs.length ? msgs.map(function(m) { return E('p', {}, [ m ]); }) : '');
 	el.style.display = msgs.length ? '' : 'none';
 }
 
 function renderReflectors(el, inst) {
-	var st = inst.status;
+	var st = liveStatus(inst);
 	if (!st || !st.reflectors) {
 		dom.content(el, _('Reflectors') + ': -');
 		return;
@@ -120,12 +132,12 @@ function renderReflectors(el, inst) {
 
 function buildStatRow(dirLabel) {
 	var cells = {
-		shaper: E('td', { 'class': 'td' }, '-'),
-		achieved: E('td', { 'class': 'td' }, '-'),
-		load: E('td', { 'class': 'td' }, '-'),
-		owd: E('td', { 'class': 'td' }, '-'),
-		bb: E('td', { 'class': 'td' }, '-'),
-		range: E('td', { 'class': 'td' }, '-')
+		shaper: E('td', { 'class': 'td', 'data-title': _('Shaper') }, '-'),
+		achieved: E('td', { 'class': 'td', 'data-title': _('Achieved') }, '-'),
+		load: E('td', { 'class': 'td', 'data-title': _('Load') }, '-'),
+		owd: E('td', { 'class': 'td', 'data-title': _('OWD Δ') }, '-'),
+		bb: E('td', { 'class': 'td', 'data-title': _('Bufferbloat') }, '-'),
+		range: E('td', { 'class': 'td', 'data-title': _('Min / Base / Max') }, '-')
 	};
 	var tr = E('tr', { 'class': 'tr' }, [
 		E('td', { 'class': 'td' }, dirLabel),
@@ -179,7 +191,8 @@ return view.extend({
 		var stateDot = E('span', { 'style': 'display:inline-block;width:10px;height:10px;border-radius:5px;background:' + meta.color });
 		var stateLabel = E('span', {}, meta.label);
 		var ifaceLabel = E('span', {}, ifaceText(id, inst));
-		var uptimeLabel = E('span', {}, (inst.status && inst.status.uptime_s != null) ? api.fmtUptime(inst.status.uptime_s) : '-');
+		var st = liveStatus(inst);
+		var uptimeLabel = E('span', {}, (st && st.uptime_s != null) ? api.fmtUptime(st.uptime_s) : '-');
 		var pidLabel = E('span', {}, inst.pid ? String(inst.pid) : '-');
 
 		function ctrlButton(label, style, action) {
@@ -197,8 +210,8 @@ return view.extend({
 
 		var dlRow = buildStatRow(_('DL'));
 		var ulRow = buildStatRow(_('UL'));
-		updateStatRow(dlRow.cells, inst.status && inst.status.dl);
-		updateStatRow(ulRow.cells, inst.status && inst.status.ul);
+		updateStatRow(dlRow.cells, st && st.dl);
+		updateStatRow(ulRow.cells, st && st.ul);
 
 		var table = E('table', { 'class': 'table' }, [
 			E('tr', { 'class': 'tr table-titles' }, [
@@ -224,13 +237,15 @@ return view.extend({
 				{ key: 'ul_ac', label: _('UL achieved'), color: '#cc7722', fill: 'rgba(204,119,34,.15)' }
 			],
 			height: 140,
-			fmt: api.fmtKbps
+			fmt: api.fmtKbps,
+			fmtAxis: api.fmtKbpsAxis,
+			title: _('Bandwidth')
 		});
 
 		var chartsWrap = E('div', {}, [ chartGroup.renderControls(), bwChart.render() ]);
 
 		var warningsEl = E('div', { 'class': 'alert-message warning', 'style': 'display:none' }, []);
-		var reflectorsEl = E('div', { 'style': 'font-size:12px;color:#555;margin-top:4px' }, '-');
+		var reflectorsEl = E('div', { 'style': 'font-size:12px;opacity:.75;margin-top:4px' }, '-');
 
 		renderWarnings(warningsEl, computeWarnings(id, inst, this.sysinfo, totalInstances));
 		renderReflectors(reflectorsEl, inst);
@@ -284,7 +299,7 @@ return view.extend({
 		card.stateLabel.textContent = meta.label;
 		card.ifaceLabel.textContent = ifaceText(id, inst);
 
-		var st = inst.status;
+		var st = liveStatus(inst);
 		card.uptimeLabel.textContent = (st && st.uptime_s != null) ? api.fmtUptime(st.uptime_s) : '-';
 		card.pidLabel.textContent = inst.pid ? String(inst.pid) : '-';
 
@@ -313,13 +328,15 @@ return view.extend({
 				card.latencyChart = new charts.TimeSeriesChart({
 					group: card.chartGroup,
 					series: rtt ? [
-						{ key: 'dl_owd', label: _('Latency Δ (RTT-based, same for DL and UL)'), color: '#7a4fb5', width: 2 }
+						{ key: 'dl_owd', label: _('OWD Δ (estimated as RTT/2, same for DL and UL)'), color: '#7a4fb5', width: 2 }
 					] : [
 						{ key: 'dl_owd', label: _('DL OWD Δ'), color: '#2266cc', width: 2 },
 						{ key: 'ul_owd', label: _('UL OWD Δ'), color: '#cc7722', width: 2 }
 					],
 					height: 140,
-					fmt: api.fmtMs
+					fmt: api.fmtMs,
+					fmtAxis: function(v) { return _('%s ms').format(v >= 10 ? Math.round(v) : Math.round(v * 10) / 10); },
+					title: _('Latency')
 				});
 				card.chartsWrap.appendChild(card.latencyChart.render());
 			}

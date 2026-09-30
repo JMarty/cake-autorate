@@ -63,7 +63,10 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   an instance starts (`sync_sqm_rates`), not by the web UI.
 - LuCI pages (Services -> CAKE Autorate): Overview, Instances, Log, MQTT,
   plus a Status-page widget. Rolling charts with zoom, synced hover and
-  dynamic scale; instance grid shows defaults.
+  dynamic scale; instance grid shows defaults. Charts are theme-safe
+  (dark mode), keyboard-accessible legend, touch tooltip; stopped/stale
+  instances show no data, config errors appear as a card warning, and the
+  Status widget hides itself (returns null) when there is nothing to show.
 - LuCI Instances page (luci-app 1.1.0): grid columns enabled (inline),
   dl_if, ul_if, base DL/UL rate are also editable in the modal; booleans
   backed by defaults.sh are tri-state (Default / On / Off, `flagOpt`) so

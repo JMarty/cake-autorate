@@ -17,7 +17,7 @@
  *     series: [ { key:'dl_sh', label:'DL shaper', color:'#2266cc', width:2 },
  *               { key:'dl_ac', label:'DL achieved', color:'#2266cc', fill:'rgba(34,102,204,.15)' } ],
  *     guides: [ { value:60, label:'delay thr', color:'#cc0000' } ],
- *     height: 140, fmt: api.fmtKbps
+ *     height: 140, fmt: api.fmtKbps, fmtAxis: api.fmtKbpsAxis, title: 'Bandwidth'
  * });
  * parent.appendChild(g.renderControls());
  * parent.appendChild(c.render());
@@ -25,7 +25,7 @@
  */
 
 var W = 600;            /* SVG user units across; stretched to the container */
-var GUTTER = 64;        /* px left of the plot reserved for y-axis labels */
+var GUTTER = 72;        /* px left of the plot reserved for y-axis labels */
 var DASH = 6;           /* guide dash length; coinciding guides interleave */
 var MIN_ZOOM_MS = 10000;
 var GAP_MS = 10000;     /* a longer gap between samples breaks the line */
@@ -118,8 +118,9 @@ var ChartGroup = baseclass.extend({
 				'type': 'button',
 				'class': 'btn cbi-button',
 				'style': 'padding:0 8px;min-width:0',
+				'aria-pressed': 'false',
 				'click': function() { self.setRange(s); }
-			}, s < 60 ? s + _('s') : (s / 60) + _('m'));
+			}, s < 60 ? _('%d s').format(s) : _('%d min').format(s / 60));
 			b.rangeS = s;
 			return b;
 		});
@@ -129,20 +130,23 @@ var ChartGroup = baseclass.extend({
 			'style': 'padding:0 8px;display:none',
 			'click': function() { self.reset(); }
 		}, _('Back to live'));
-		this.zoomLabel = E('span', { 'style': 'color:#555' }, '');
-		this.hint = E('span', { 'style': 'color:#999;font-size:11px' },
-			_('Drag across a chart to zoom in, double-click to zoom out.'));
+		var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+		this.zoomLabel = E('span', { 'style': 'color:inherit;opacity:.7' }, '');
+		this.hint = E('span', { 'style': 'color:inherit;opacity:.7;font-size:11px' },
+			coarse ? _('Tap a chart to see values.') : _('Drag across a chart to zoom in, double-click to zoom out.'));
 		this.updateControls();
 		return E('div', { 'style': 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0 2px;font-size:12px' },
-			[ E('span', {}, _('Time range') + ':') ].concat(this.rangeButtons, [ this.zoomLabel, this.liveButton, this.hint ]));
+			[ E('span', {}, _('Time range:')) ].concat(this.rangeButtons, [ this.zoomLabel, this.liveButton, this.hint ]));
 	},
 
 	updateControls: function() {
 		var self = this;
 		if (!this.liveButton) return;
 		this.rangeButtons.forEach(function(b) {
-			b.style.fontWeight = (!self.zoom && b.rangeS === self.rangeS) ? 'bold' : '';
-			b.style.textDecoration = (!self.zoom && b.rangeS === self.rangeS) ? 'underline' : '';
+			var on = (!self.zoom && b.rangeS === self.rangeS);
+			b.style.fontWeight = on ? 'bold' : '';
+			b.style.textDecoration = on ? 'underline' : '';
+			b.setAttribute('aria-pressed', on ? 'true' : 'false');
 		});
 		this.liveButton.style.display = this.zoom ? '' : 'none';
 		this.hint.style.display = this.zoom ? 'none' : '';
@@ -221,6 +225,7 @@ var TimeSeriesChart = baseclass.extend({
 		if (!this.group.zoom)
 			for (i = 0; i < this.guides.length; i++)
 				if (this.guides[i].value > m) m = this.guides[i].value;
+		this.noData = !(m > 0);
 		return niceMax(m * 1.05);
 	},
 
@@ -236,7 +241,7 @@ var TimeSeriesChart = baseclass.extend({
 				if (arr[i] == null) { lastT = null; continue; }
 			}
 			x = this.x(this.times[i], v).toFixed(1);
-			d += (segStart == null ? 'M' : 'L') + x + ' ' + this.y(arr[i], max).toFixed(1);
+			d += (segStart == null ? 'M' : 'L') + x + ' ' + this.y(Math.max(0, arr[i]), max).toFixed(1);
 			if (segStart == null) segStart = x;
 			px = x;
 			lastT = this.times[i];
@@ -281,9 +286,10 @@ var TimeSeriesChart = baseclass.extend({
 			});
 		});
 
-		this.yLabels[0].textContent = this.fmt(max);
-		this.yLabels[1].textContent = this.fmt(max / 2);
-		this.yLabels[2].textContent = this.fmt(0);
+		var fa = this.opts.fmtAxis || this.fmt;
+		this.yLabels[0].textContent = this.noData ? '' : fa(max);
+		this.yLabels[1].textContent = this.noData ? '' : fa(max / 2);
+		this.yLabels[2].textContent = this.noData ? '' : fa(0);
 		this.xLabels[0].textContent = fmtClock(v.t0);
 		this.xLabels[1].textContent = this.group.zoom ? fmtClock(v.t1) : _('now');
 
@@ -315,7 +321,7 @@ var TimeSeriesChart = baseclass.extend({
 		this.hoverLine.setAttribute('x2', x.toFixed(1));
 		this.hoverLine.style.display = '';
 
-		var self = this, rows = [ E('div', { 'style': 'color:#666;margin-bottom:2px' }, fmtClock(this.times[i])) ];
+		var self = this, rows = [ E('div', { 'style': 'opacity:.7;margin-bottom:2px' }, fmtClock(this.times[i])) ];
 		this.series.forEach(function(s) {
 			if (s.hidden) return;
 			var val = self.data[s.key][i];
@@ -327,14 +333,12 @@ var TimeSeriesChart = baseclass.extend({
 		});
 		dom.content(this.tip, rows);
 		this.tip.style.display = '';
-		var frac = x / W, pw = this.plot.clientWidth;
-		if (frac > 0.6) {
-			this.tip.style.left = '';
-			this.tip.style.right = Math.max(0, (1 - frac) * pw + 8) + 'px';
-		} else {
-			this.tip.style.right = '';
-			this.tip.style.left = Math.max(0, frac * pw + 8) + 'px';
-		}
+		var frac = x / W, pw = this.plot.clientWidth, tw = this.tip.offsetWidth;
+		var left = frac * pw + 8;
+		if (left + tw > pw) left = frac * pw - tw - 8;
+		left = Math.max(0, Math.min(pw - tw, left));
+		this.tip.style.right = '';
+		this.tip.style.left = left + 'px';
 	},
 
 	buildGuideLines: function() {
@@ -354,13 +358,24 @@ var TimeSeriesChart = baseclass.extend({
 	renderLegend: function() {
 		var self = this, items = [];
 		this.series.forEach(function(s) {
+			function toggle() {
+				s.hidden = !s.hidden;
+				item.style.opacity = s.hidden ? '.35' : '1';
+				item.setAttribute('aria-pressed', s.hidden ? 'false' : 'true');
+				self.redraw();
+			}
 			var item = E('span', {
 				'style': 'margin-right:12px;cursor:pointer;user-select:none;opacity:' + (s.hidden ? '.35' : '1'),
 				'title': _('Click to show/hide'),
-				'click': function() {
-					s.hidden = !s.hidden;
-					item.style.opacity = s.hidden ? '.35' : '1';
-					self.redraw();
+				'role': 'button',
+				'tabindex': '0',
+				'aria-pressed': s.hidden ? 'false' : 'true',
+				'click': toggle,
+				'keydown': function(ev) {
+					if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+						ev.preventDefault();
+						toggle();
+					}
 				}
 			}, [
 				E('span', { 'style': 'display:inline-block;width:10px;height:3px;background:' + s.color + ';vertical-align:middle;margin-right:4px' }),
@@ -383,12 +398,14 @@ var TimeSeriesChart = baseclass.extend({
 		this.svg = svgEl('svg', {
 			'viewBox': '0 0 ' + W + ' ' + h,
 			'preserveAspectRatio': 'none',
-			'style': 'display:block;width:100%;height:' + h + 'px;background:#fafafa;border:1px solid #ddd;border-radius:3px;cursor:crosshair'
+			'role': 'img',
+			'aria-label': this.opts.title || '',
+			'style': 'display:block;width:100%;height:' + h + 'px;background:transparent;border:1px solid rgba(128,128,128,.35);border-radius:3px;cursor:crosshair'
 		});
 		[ 0, 0.5 ].forEach(function(f) {
 			self.svg.appendChild(svgEl('line', {
 				'x1': 0, 'x2': W, 'y1': (h * f).toFixed(1), 'y2': (h * f).toFixed(1),
-				'stroke': '#e4e4e4', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke'
+				'stroke': 'currentColor', 'stroke-opacity': '.15', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke'
 			}));
 		});
 
@@ -414,7 +431,7 @@ var TimeSeriesChart = baseclass.extend({
 		}
 
 		this.hoverLine = svgEl('line', {
-			'x1': 0, 'x2': 0, 'y1': 0, 'y2': h, 'stroke': '#555', 'stroke-width': 1,
+			'x1': 0, 'x2': 0, 'y1': 0, 'y2': h, 'stroke': 'currentColor', 'stroke-opacity': '.6', 'stroke-width': 1,
 			'vector-effect': 'non-scaling-stroke', 'style': 'display:none'
 		});
 		this.svg.appendChild(this.hoverLine);
@@ -427,12 +444,12 @@ var TimeSeriesChart = baseclass.extend({
 		this.buildGuideLines();
 
 		this.tip = E('div', {
-			'style': 'display:none;position:absolute;top:4px;pointer-events:none;background:rgba(255,255,255,.95);' +
-				'border:1px solid #ccc;border-radius:3px;padding:4px 6px;font-size:11px;line-height:1.4;white-space:nowrap;z-index:5'
+			'style': 'display:none;position:absolute;top:4px;pointer-events:none;background:var(--background-color-high,#fff);color:var(--text-color-high,#222);' +
+				'border:1px solid rgba(128,128,128,.5);border-radius:3px;padding:4px 6px;font-size:11px;line-height:1.4;white-space:nowrap;z-index:5'
 		});
 		this.plot = E('div', { 'style': 'position:relative;flex:1;min-width:0' }, [ this.svg, this.tip ]);
 
-		var lblStyle = 'position:absolute;right:6px;font-size:11px;color:#999;white-space:nowrap;line-height:1';
+		var lblStyle = 'position:absolute;right:6px;font-size:11px;color:inherit;opacity:.7;white-space:nowrap;line-height:1';
 		this.yLabels = [
 			E('span', { 'style': lblStyle + ';top:0' }, ''),
 			E('span', { 'style': lblStyle + ';top:' + (h / 2 - 5) + 'px' }, ''),
@@ -441,9 +458,9 @@ var TimeSeriesChart = baseclass.extend({
 		var gutter = E('div', { 'style': 'position:relative;flex:0 0 ' + GUTTER + 'px;height:' + (h + 2) + 'px' }, this.yLabels);
 
 		this.xLabels = [ E('span', {}, ''), E('span', {}, '') ];
-		var xAxis = E('div', { 'style': 'margin-left:' + GUTTER + 'px;display:flex;justify-content:space-between;font-size:11px;color:#999' }, this.xLabels);
+		var xAxis = E('div', { 'style': 'margin-left:' + GUTTER + 'px;display:flex;justify-content:space-between;font-size:11px;color:inherit;opacity:.7' }, this.xLabels);
 
-		this.legend = E('div', { 'style': 'margin-left:' + GUTTER + 'px;font-size:11px;color:#555;margin-top:2px' });
+		this.legend = E('div', { 'style': 'margin-left:' + GUTTER + 'px;font-size:11px;color:inherit;opacity:.7;margin-top:2px' });
 		this.renderLegend();
 
 		/* Mouse: hover shows values on every chart of the group; drag
@@ -493,6 +510,11 @@ var TimeSeriesChart = baseclass.extend({
 		this.svg.addEventListener('touchmove', function(ev) {
 			if (ev.touches.length === 1) self.group.hover(timeAt(ev.touches[0]).t);
 		}, { passive: true });
+		function clearSoon() {
+			setTimeout(function() { self.group.hover(null); }, 1500);
+		}
+		this.svg.addEventListener('touchend', clearSoon);
+		this.svg.addEventListener('touchcancel', clearSoon);
 
 		this.root = E('div', { 'style': 'margin:6px 0' }, [
 			E('div', { 'style': 'display:flex' }, [ gutter, this.plot ]),

@@ -9,9 +9,11 @@
  * status includes automatically (~5s); this file only needs load()/
  * render(), no poller of its own.
  *
- * Renders nothing (E([])) when the rpcd object is absent or the package
- * has never been configured, so the widget stays silent rather than
- * showing an error on installs where it isn't wired up yet.
+ * Returns null (not E([])) when the rpcd object is absent or the package
+ * has never been configured: LuCI's status page shows a section's box
+ * whenever render() returns non-null content, so null keeps the widget
+ * entirely hidden. Rates/OWD show '-' for an instance that is stopped or
+ * whose status file is stale.
  */
 
 function stateChip(inst) {
@@ -24,14 +26,16 @@ function stateChip(inst) {
 	]);
 }
 
-function rateCell(st, key) {
-	if (!st || !st.dl || !st.ul)
+function rateCell(inst, key) {
+	var st = inst.status;
+	if (!inst.running || inst.stale || !st || !st.dl || !st.ul)
 		return '-';
 	return api.fmtKbps(st.dl[key]) + ' / ' + api.fmtKbps(st.ul[key]);
 }
 
-function owdCell(st) {
-	if (!st || !st.dl || !st.ul)
+function owdCell(inst) {
+	var st = inst.status;
+	if (!inst.running || inst.stale || !st || !st.dl || !st.ul)
 		return '-';
 	return api.fmtMs(st.dl.avg_owd_delta_ms) + ' / ' + api.fmtMs(st.ul.avg_owd_delta_ms);
 }
@@ -45,11 +49,11 @@ return baseclass.extend({
 
 	render: function(res) {
 		if (!res || !res.ok || !res.instances)
-			return E([]);
+			return null;
 
 		var ids = Object.keys(res.instances);
 		if (!ids.length)
-			return E([]);
+			return null;
 
 		var rows = [
 			E('tr', { 'class': 'tr table-titles' }, [
@@ -70,9 +74,9 @@ return baseclass.extend({
 			rows.push(E('tr', { 'class': 'tr' }, [
 				E('td', { 'class': 'td' }, id),
 				E('td', { 'class': 'td' }, stateChip(inst)),
-				E('td', { 'class': 'td' }, rateCell(st, 'shaper_kbps')),
-				E('td', { 'class': 'td' }, rateCell(st, 'achieved_kbps')),
-				E('td', { 'class': 'td' }, owdCell(st))
+				E('td', { 'class': 'td' }, rateCell(inst, 'shaper_kbps')),
+				E('td', { 'class': 'td' }, rateCell(inst, 'achieved_kbps')),
+				E('td', { 'class': 'td' }, owdCell(inst))
 			]));
 		}
 
