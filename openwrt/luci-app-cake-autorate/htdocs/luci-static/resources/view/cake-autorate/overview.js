@@ -18,6 +18,28 @@
 /* UCI pinger_method values use a hyphen; system_info.pingers keys use '_'. */
 var PING_KEY_MAP = { 'fping-ts': 'fping_ts' };
 
+/* Pingers that measure round-trip time: cake-autorate feeds the same
+ * value to DL and UL, so the latency chart shows it as one series. */
+var RTT_PINGERS = { 'fping': true, 'ping': true };
+
+/* Threshold guides for the latency chart; DL/UL are drawn separately only
+ * when their values differ. */
+function latencyGuides(st) {
+	var guides = [];
+	function pair(key, label, dlColor, ulColor) {
+		var dl = st.dl[key], ul = st.ul[key];
+		if (dl != null && dl === ul) {
+			guides.push({ value: dl, label: label, color: dlColor });
+			return;
+		}
+		if (dl != null) guides.push({ value: dl, label: _('DL') + ' ' + label, color: dlColor });
+		if (ul != null) guides.push({ value: ul, label: _('UL') + ' ' + label, color: ulColor });
+	}
+	pair('delay_thr_ms', _('delay threshold'), '#cc0000', '#e8697a');
+	pair('max_adjust_down_thr_ms', _('max adjust-down threshold'), '#e08800', '#f2c14e');
+	return guides;
+}
+
 var LOAD_LABEL = {
 	idle: _('Idle'),
 	low: _('Low'),
@@ -191,18 +213,21 @@ return view.extend({
 			dlRow.tr, ulRow.tr
 		]);
 
+		/* 900 samples at the 2s poll = 30 minutes of history. */
+		var chartGroup = new charts.ChartGroup({ capacity: 900 });
 		var bwChart = new charts.TimeSeriesChart({
+			group: chartGroup,
 			series: [
 				{ key: 'dl_sh', label: _('DL shaper'), color: '#2266cc', width: 2 },
 				{ key: 'dl_ac', label: _('DL achieved'), color: '#2266cc', fill: 'rgba(34,102,204,.15)' },
 				{ key: 'ul_sh', label: _('UL shaper'), color: '#cc7722', width: 2 },
 				{ key: 'ul_ac', label: _('UL achieved'), color: '#cc7722', fill: 'rgba(204,119,34,.15)' }
 			],
-			height: 140, samples: 300,
-			fmtMax: api.fmtKbps
+			height: 140,
+			fmt: api.fmtKbps
 		});
 
-		var chartsWrap = E('div', {}, [ bwChart.render() ]);
+		var chartsWrap = E('div', {}, [ chartGroup.renderControls(), bwChart.render() ]);
 
 		var warningsEl = E('div', { 'class': 'alert-message warning', 'style': 'display:none' }, []);
 		var reflectorsEl = E('div', { 'style': 'font-size:12px;color:#555;margin-top:4px' }, '-');
@@ -241,14 +266,18 @@ return view.extend({
 			warningsEl: warningsEl,
 			reflectorsEl: reflectorsEl,
 			chartsWrap: chartsWrap,
+			chartGroup: chartGroup,
 			bwChart: bwChart,
-			latencyChart: null
+			latencyChart: null,
+			latencyRtt: null
 		};
 	},
 
 	/* Patch an already-built card in place for one poll tick. Never
-	 * recreates the bandwidth chart; the latency chart is created once,
-	 * lazily, the first time a non-null status carries its guide values. */
+	 * recreates the bandwidth chart; the latency chart is created lazily,
+	 * the first time a non-null status arrives, and rebuilt only if the
+	 * pinger switches between RTT and OWD measurement. Its threshold guides
+	 * follow the live status every tick. */
 	updateCard: function(card, id, inst) {
 		var meta = api.STATE_META[api.deriveState(inst)] || api.STATE_META.disabled;
 		card.stateDot.style.background = meta.color;
@@ -267,25 +296,34 @@ return view.extend({
 
 		var haveRates = !!(st && st.dl && st.ul);
 
+		card.chartGroup.tick();
 		card.bwChart.push(haveRates ? {
 			dl_sh: st.dl.shaper_kbps, dl_ac: st.dl.achieved_kbps,
 			ul_sh: st.ul.shaper_kbps, ul_ac: st.ul.achieved_kbps
 		} : {});
 
-		if (!card.latencyChart && haveRates) {
-			card.latencyChart = new charts.TimeSeriesChart({
-				series: [
-					{ key: 'dl_owd', label: _('DL OWD Δ'), color: '#2266cc', width: 2 },
-					{ key: 'ul_owd', label: _('UL OWD Δ'), color: '#cc7722', width: 2 }
-				],
-				guides: [
-					{ value: st.dl.delay_thr_ms, label: _('delay threshold'), color: '#cc0000' },
-					{ value: st.dl.max_adjust_down_thr_ms, label: _('max adjust-down threshold'), color: '#e08800' }
-				],
-				height: 140, samples: 300,
-				fmtMax: api.fmtMs
-			});
-			card.chartsWrap.appendChild(card.latencyChart.render());
+		if (haveRates) {
+			var rtt = !!RTT_PINGERS[st.pinger_method];
+			if (card.latencyChart && card.latencyRtt !== rtt) {
+				card.latencyChart.destroy();
+				card.latencyChart = null;
+			}
+			if (!card.latencyChart) {
+				card.latencyRtt = rtt;
+				card.latencyChart = new charts.TimeSeriesChart({
+					group: card.chartGroup,
+					series: rtt ? [
+						{ key: 'dl_owd', label: _('Latency Δ (RTT-based, same for DL and UL)'), color: '#7a4fb5', width: 2 }
+					] : [
+						{ key: 'dl_owd', label: _('DL OWD Δ'), color: '#2266cc', width: 2 },
+						{ key: 'ul_owd', label: _('UL OWD Δ'), color: '#cc7722', width: 2 }
+					],
+					height: 140,
+					fmt: api.fmtMs
+				});
+				card.chartsWrap.appendChild(card.latencyChart.render());
+			}
+			card.latencyChart.setGuides(latencyGuides(st));
 		}
 		if (card.latencyChart)
 			card.latencyChart.push(haveRates ? { dl_owd: st.dl.avg_owd_delta_ms, ul_owd: st.ul.avg_owd_delta_ms } : {});

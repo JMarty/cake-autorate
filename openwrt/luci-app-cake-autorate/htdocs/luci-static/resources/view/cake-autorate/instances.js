@@ -46,6 +46,15 @@ function opt(s, tab, widget, name, title, extra) {
 	if (d && !d.list) {
 		o.placeholder = d.value;
 		if (d.description) o.description = d.description;
+		/* Grid cells: an unset option runs on the built-in default, so show
+		 * that (greyed) instead of LuCI's generic "none". */
+		if (widget === form.Value)
+			o.textvalue = function(section_id) {
+				var v = this.cfgvalue(section_id);
+				if (v != null && v !== '')
+					return widget.prototype.textvalue.apply(this, arguments);
+				return E('span', { 'style': 'color:#888', 'title': _('built-in default') }, String(this.placeholder));
+			};
 	}
 	o.rmempty = true;
 	o.modalonly = true;

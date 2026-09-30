@@ -37,8 +37,9 @@ return baseclass.extend({
 
 	fmtKbps: function(kbps) {
 		if (kbps == null || isNaN(kbps)) return '-';
+		if (kbps >= 1000000) return (kbps / 1000000).toFixed(2) + ' ' + _('Gbit/s');
 		if (kbps >= 1000) return (kbps / 1000).toFixed(1) + ' ' + _('Mbit/s');
-		return kbps + ' ' + _('kbit/s');
+		return Math.round(kbps) + ' ' + _('kbit/s');
 	},
 
 	fmtUptime: function(s) {
