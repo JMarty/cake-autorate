@@ -27,8 +27,14 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - Released: v3.5.0-owrt3 (backend 3.5.0-r2, LuCI 1.0.0-r1).
 - Pre-release hardening (plan: docs/superpowers/plans/2026-09-30-pre-release-hardening.md)
   Tasks 1-9 done on branch `pre-release-hardening` (code, tests, CI, docs);
-  CHANGELOG lists it as "v3.5.0-owrt4 (unreleased)".
-- Next (Task 10, with the user): on-router checks, add screenshots
+  CHANGELOG lists it as "v3.5.0-owrt4 (unreleased)". Final whole-branch
+  review fix wave done (check-config log side effect, export dir hardening,
+  strict SQM rate sync, r2-backend warning, CI release job, docs).
+- Next (Task 10, with the user): on-router checks — incl. a crashed
+  instance with log_to_file=1 does not grow /var/log/cake-autorate.log
+  (rpcd --check-config polling); `log_export` refuses a pre-made symlinked
+  /tmp/cake-autorate-export; LuCI 1.1.0 on an r2 (owrt3) backend shows the
+  "backend is older" warning — then add screenshots
   images/luci-overview.png + images/luci-instances.png (referenced by README),
   enable GitHub Issues and private vulnerability reporting (docs link to
   both; currently disabled), merge, tag v3.5.0-owrt4 (backend 3.5.0-r3,
@@ -53,7 +59,10 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   1000 ms; 0 disables). Written in place with a fork-free builtin printf;
   carries `updated_us`; readers must tolerate an empty/partial file.
 - `cake-autorate.sh --check-config <file>` validates settings (incl.
-  cross-field relations via `check_config_relations`) before restart.
+  cross-field relations via `check_config_relations`); it forces
+  log_to_file=0/use_logger=0 even after sourcing the config (no side
+  effects). The init script does not run it; rpcd `status` runs it for
+  crashed instances (config_errors).
 - On exit CAKE is reset to the base rates (`reset_shaper_rates_on_exit=1`);
   the run dir is only removed by the process that created it; a missing
   `log_file_path_override` dir falls back to /var/log with a warning.
@@ -61,7 +70,8 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   from UCI.
 - rpcd/ubus API (`ubus call cake-autorate <method>`): status, defaults,
   instance_control, service_control, check_config, log_tail, log_export,
-  log_reset, system_info, sqm_create, sqm_sync_rates, mqtt_status.
+  log_reset, system_info, sqm_create, sqm_sync_rates (CLI only; not in
+  the LuCI ACL), mqtt_status.
   `status` adds `config_errors` (check-config result) for enabled, stopped
   instances with a non-zero exit code; `log_export` keeps only the newest
   export per instance in /tmp/cake-autorate-export.

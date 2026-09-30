@@ -61,8 +61,10 @@ What this fork adds on top of upstream:
   handy from the command line. If an enabled instance has crashed
   because of a bad setting, `status` reports the configuration error.
 - **Config validation** (`cake-autorate.sh --check-config <file>`),
-  including relations between settings (e.g. min ≤ base ≤ max), so bad
-  settings are rejected before they restart a running instance.
+  including relations between settings (e.g. min ≤ base ≤ max). The
+  web interface's form validation catches the common mistakes before
+  saving; anything else shows up as a configuration error for that
+  instance on the Overview page.
 - **Automatic migration** of existing `setup.sh`-style installs
   (`/root/cake-autorate/config.*.sh`) into UCI on first package
   install, including MQTT publisher credentials.
@@ -72,7 +74,7 @@ What this fork adds on top of upstream:
   that does not exist (e.g. an unmounted USB stick), the log goes to
   `/var/log` with a warning instead of the instance failing.
 - **CI**: shellcheck, a JavaScript syntax check of the web interface,
-  an offline test suite (135 assertions) and OpenWrt SDK package
+  an offline test suite and OpenWrt SDK package
   builds on every push; releases are built from tags.
 
 ### The web interface (luci-app-cake-autorate)

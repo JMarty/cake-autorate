@@ -176,6 +176,11 @@ uci delete cake-autorate.global.legacy_migrated
 uci commit cake-autorate
 ```
 
+A repeated import only replaces `primary`: a legacy `config.<id>.sh`
+whose instance `<id>` already exists in UCI is skipped (logged), so
+delete those instances first if you want them re-imported. The marker
+is set again only when legacy `config.*.sh` files were found.
+
 ### Upgrade
 
 Download the files of the new release and install them exactly as in

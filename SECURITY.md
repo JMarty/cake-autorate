@@ -45,6 +45,9 @@ These are documented properties, not vulnerabilities:
   `/etc/config/cake-autorate` and is readable by LuCI users with read
   access to this app, and by anyone who can read that file or a
   configuration backup.
+- **Log files are read as root.** The log tail and export functions
+  run as root, so `log_file_path_override` should point to a directory
+  that only root can write to (not e.g. a world-writable share).
 - **The packages are not signed** with an OpenWrt key and need
   `apk add --allow-untrusted`. Verify downloads with the `SHA256SUMS`
   file of the release (see
