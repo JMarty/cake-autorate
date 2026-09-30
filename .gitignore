@@ -9,3 +9,7 @@ output.*.*
 [a-z].sh
 [a-z][a-z].sh
 [a-z][a-z][a-z].sh
+
+# superpowers (AI planning workflow) working files -- kept locally, never published
+/docs/superpowers/
+/.superpowers/
