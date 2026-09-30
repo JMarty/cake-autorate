@@ -129,7 +129,10 @@ When an instance stops, CAKE is set back to its base rates
 (`reset_shaper_rates_on_exit`, default on). If you enable
 `sqm_sync_base_rates` for an instance that is linked to an SQM queue
 (`sqm_instance`), the service writes the instance's base rates into
-that SQM queue each time the instance starts.
+that SQM queue each time the instance starts. With `manage_sqm='1'`
+the service also switches the instance's SQM queue (the linked one,
+else the first queue on its upload interface) on with CAKE when the
+instance starts, and off when it stops.
 
 ### Verify
 
@@ -228,10 +231,24 @@ migration are not copied back; transfer them to
   Overview page — it shows the configuration error of a crashed
   instance — or run `ubus call cake-autorate status` and look at
   `config_errors`. `logread -e cake-autorate` shows the same messages.
-- **"No CAKE qdisc on …":** cake-autorate only adjusts an existing
-  CAKE queue. Enable SQM with the `cake` queueing discipline on that
-  interface (or use **Create SQM instance…** on the Instances page)
-  and check the interface names with `tc qdisc ls`.
+- **"Not shaping — no CAKE qdisc" / "no CAKE qdisc on …":**
+  cake-autorate only adjusts an existing CAKE queue; it does not create
+  one. The SQM line on the instance's Overview card shows what is
+  missing: no SQM queue on the upload interface (use **Create SQM
+  instance…** on the Instances page), a disabled queue, or a queue with
+  another qdisc (both fixed by **Enable SQM**, which switches the queue
+  on with CAKE). Also check that the download/upload interfaces match
+  the SQM queue (`tc qdisc ls` shows where CAKE runs; the download
+  side is usually `ifb4<wan>`).
+- **SQM switches off when cake-autorate stops:** that is what the
+  instance option *Let cake-autorate switch SQM on and off*
+  (`manage_sqm`, SQM tab) does. Starting the instance switches its SQM
+  queue on with CAKE; `service cake-autorate stop [<id>]`, disabling
+  the instance or removing the package switch it off, so there is no
+  traffic shaping at all while cake-autorate is stopped. A restart
+  switches it off and on again; a reboot leaves it as it is. Turn the
+  option off to keep SQM running on its own; switching SQM off by hand
+  while the option is on is undone by the next start or reload.
 - **The menu Services → CAKE Autorate is missing, or pages show
   "Access denied" / permission errors:** run `service rpcd reload`,
   clear the LuCI cache with `rm -rf /tmp/luci-*`, then log out of LuCI

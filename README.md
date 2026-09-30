@@ -52,6 +52,16 @@ What this fork adds on top of upstream:
 - **Optional SQM sync**: with `sqm_sync_base_rates` enabled and an SQM
   queue linked, the service writes the instance's base rates into that
   SQM queue each time the instance starts.
+- **SQM awareness and optional SQM management**: cake-autorate only
+  adjusts a CAKE qdisc that SQM (sqm-scripts) has set up. Each instance
+  finds its SQM queue (the linked `sqm_instance`, else the first queue
+  on its upload interface). The web interface shows whether that queue
+  exists, is enabled and uses CAKE, and can switch it on. A running
+  instance without CAKE is shown as "Not shaping — no CAKE qdisc".
+  With `manage_sqm` enabled for an instance, starting it switches its
+  SQM queue on (with CAKE) and stopping it switches SQM off — there is
+  then no traffic shaping at all while cake-autorate is stopped.
+  A reboot leaves SQM as it is.
 - **Machine-readable live status**: each instance writes
   `/var/run/cake-autorate/<id>/status.json` (shaper and achieved rates,
   OWD deltas, load state, reflectors, uptime) about once a second.
@@ -87,12 +97,16 @@ After installing `luci-app-cake-autorate`, the pages are under
   drag across a chart to zoom in, double-click to zoom out, hover or
   tap to read the values of all charts at that moment), automatic
   scaling up to Gbit/s, start/stop/restart per instance and for all
-  instances. Cards warn about common problems: no CAKE qdisc on the
-  interface, missing pinger, disabled SQM queue, multi-WAN probe
-  routing, and configuration errors that stop an instance from
-  starting.
+  instances. An SQM line per card shows ✓/✗ for sqm-scripts, the SQM
+  queue (linked or auto-detected), whether it is enabled and uses CAKE,
+  whether cake-autorate manages it, and CAKE on both interfaces, with
+  an **Enable SQM** button or a link to create a queue when something
+  is missing. A running instance without CAKE shows the state "Not
+  shaping — no CAKE qdisc". Cards also warn about a missing pinger,
+  multi-WAN probe routing, and configuration errors that stop an
+  instance from starting.
 - **Instances** — add, clone and edit instances in a grid. Each
-  instance's settings are grouped in tabs (General, Pinger,
+  instance's settings are grouped in tabs (General, SQM, Pinger,
   Thresholds, Reflector health, Sleep / stall, Logging), with the
   built-in default from `defaults.sh` shown as placeholder and its
   description as help text; empty fields use the global settings or
@@ -103,7 +117,10 @@ After installing `luci-app-cake-autorate`, the pages are under
   saving. A clone is created disabled and without interfaces; disabled
   instances are ignored by the interface check, so a clone does not
   block the original. **Create SQM instance…** sets up
-  a matching SQM queue for a WAN interface.
+  a matching SQM queue for a WAN interface. The SQM tab links an SQM
+  queue, turns base-rate sync and SQM management (`manage_sqm`) on or
+  off, and has **Enable SQM now** / **Disable SQM now** buttons that
+  act immediately.
 - **Log** — view the log of an instance, filter by record type,
   auto-refresh, reset, and export (download) the full log.
 - **MQTT** — configure and start/stop the MQTT publisher.

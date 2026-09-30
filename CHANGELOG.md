@@ -41,6 +41,15 @@ Service (`cake-autorate`):
   (in `/tmp/cake-autorate-export`, created root-only; a symlinked or
   foreign-owned directory there is refused).
 - A failed import of a legacy `setup.sh` config is logged as failed.
+- SQM awareness: `status` reports each instance's SQM queue (the
+  linked `sqm_instance`, else the first queue on its upload
+  interface): whether sqm-scripts is installed, the queue, enabled,
+  qdisc, script, interface. New ubus method `sqm_control` switches a
+  queue on (with CAKE) or off.
+- Optional SQM management per instance (`manage_sqm`): start switches
+  the SQM queue on with CAKE, stop (and package removal) switches it
+  off; a reboot leaves it as it is. At most one `uci commit sqm` and
+  one SQM reload per start/stop, none when nothing changes.
 
 Web interface (`luci-app-cake-autorate` 1.1.0):
 
@@ -62,6 +71,15 @@ Web interface (`luci-app-cake-autorate` 1.1.0):
   limit), the type filter covers all record types, an empty log shows
   a hint. MQTT: a host is required when the publisher is enabled.
 - The Status-page widget hides itself when there is nothing to show.
+- SQM: new SQM tab in the instance editor (linked SQM instance,
+  base-rate sync, *Let cake-autorate switch SQM on and off*, and
+  **Enable SQM now** / **Disable SQM now** buttons). The Overview card
+  has an SQM line with ✓/✗ checks (queue found, enabled, CAKE,
+  managed, CAKE on both interfaces) and an **Enable SQM** button or a
+  link to create a queue; it replaces the old "No CAKE qdisc" and
+  "SQM instance is disabled" warnings. A running instance without CAKE
+  shows the new state "Not shaping — no CAKE qdisc" (also in the
+  Status-page widget).
 - Messages from the router (errors, interface names, reflectors) are
   always shown as plain text.
 - Narrower permissions (ACL): the app only uses its own ubus object

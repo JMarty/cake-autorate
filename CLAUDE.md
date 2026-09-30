@@ -33,8 +33,11 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   Parked review items also fixed: interface clash check ignores disabled
   instances, unused check_config ACL grant / api.checkConfig removed
   (rpcd method kept for CLI), overview version label is a text node.
-  SQM feature Part A (backend: status.sqm, sqm_control, manage_sqm) done;
-  Part B (LuCI SQM tab/overview line/no_cake state, ACL, README/CHANGELOG) next.
+  SQM feature done: Part A (backend: status.sqm, sqm_control, manage_sqm)
+  and Part B (LuCI SQM tab + Enable/Disable SQM now, Overview SQM line,
+  no_cake state, sqm_control ACL grant, README/INSTALLATION/CHANGELOG).
+  LuCI part verified only with a mock harness (no LuCI runtime): check the
+  SQM tab / buttons / Overview SQM line on the router in Task 10.
 - Next (Task 10, with the user): on-router checks — incl. a crashed
   instance with log_to_file=1 does not grow /var/log/cake-autorate.log
   (rpcd --check-config polling); `log_export` refuses a pre-made symlinked
@@ -79,7 +82,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   the LuCI ACL), sqm_control (`{"sqm_id","action":"enable"|"disable"}`:
   enable sets enabled=1 and, unless the qdisc is cake, qdisc=cake +
   piece_of_cake.qos; commit + sqm reload only when something changed;
-  LuCI ACL grant follows with the LuCI part), mqtt_status.
+  granted in the LuCI ACL), mqtt_status.
   `status` gives every instance an `sqm` object: installed, queue (id|null),
   linked (explicit sqm_instance), enabled, qdisc, script, interface, manage.
   `status` adds `config_errors` (check-config result) for enabled, stopped
@@ -109,6 +112,18 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   (dark mode), keyboard-accessible legend, touch tooltip; stopped/stale
   instances show no data, config errors appear as a card warning, and the
   Status widget hides itself (returns null) when there is nothing to show.
+- LuCI SQM: api.deriveState returns `no_cake` ("Not shaping — no CAKE
+  qdisc", red) for a running instance with cake_present.dl/ul false, except
+  in waiting_for_if (Overview + Status widget). Overview card SQM line from
+  status.sqm (✓/✗ text marks, mid-tone colours; manage is neutral; CAKE items
+  hidden for a stopped managed instance), rebuilt only when its inputs change;
+  "Enable SQM" (ui.showModal confirm -> sqm_control enable) or a link to the
+  Instances page when no queue. Instances modal tab 'sqm': sqm_instance,
+  sqm_sync_base_rates, manage_sqm (Flag), and a DummyValue '_sqm_actions'
+  with Enable/Disable SQM now: resolves the queue client-side like
+  sqm_resolve_queue from sysinfo.sqm + unsaved form values, two-step click
+  confirm (showModal would replace the edit dialog), result inline + page
+  notification. Clone skips manage_sqm.
 - LuCI Instances page (luci-app 1.1.0): grid columns enabled (inline),
   dl_if, ul_if, base DL/UL rate are also editable in the modal; booleans
   backed by defaults.sh are tri-state (Default / On / Off, `flagOpt`) so
