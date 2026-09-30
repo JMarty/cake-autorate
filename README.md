@@ -130,6 +130,23 @@ After installing `luci-app-cake-autorate`, the pages are under
 The web interface is in English only for now; translations are not
 provided yet — contributions (`po/` files) are welcome.
 
+### Screenshots
+
+Overview — live status, SQM check line and zoomable charts:
+
+![Overview page with SQM status line and live charts](images/luci-overview.png)
+
+Instances — global settings and one row per shaped WAN:
+
+![Instances page](images/luci-instances.png)
+
+Instance editor — General tab (interfaces and rates) and SQM tab
+(linked queue, optional SQM management, switch SQM now):
+
+![Instance editor, General tab](images/luci-instance-general.png)
+
+![Instance editor, SQM tab](images/luci-instance-sqm.png)
+
 ### Versioning & stability
 
 Releases of this fork are tagged `v<upstream version>-owrt<N>`, e.g.

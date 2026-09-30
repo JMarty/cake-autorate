@@ -30,9 +30,9 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   to base rates on stop, CI checksums, public docs) + SQM awareness and
   optional SQM management (manage_sqm). Verified on a real router
   (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging.
-- Next: README screenshots (the user will send new Overview + Instances
-  screenshots taken on owrt4; add them as images/luci-*.png and a
-  "Screenshots" subsection in the README fork section).
+- README screenshots (images/luci-overview.png, luci-instances.png,
+  luci-instance-general.png, luci-instance-sqm.png) taken by the user on
+  the owrt4 candidate; retake when the UI changes visibly.
 - Not yet exercised on a device: crashed instance with log_to_file=1 does
   not grow /var/log/cake-autorate.log; `log_export` refuses a pre-made
   symlinked /tmp/cake-autorate-export; LuCI 1.1.0 on an r2 backend shows the
@@ -157,7 +157,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 | openwrt/tests/ | Offline tests (run-tests.sh, test_*.sh, fixtures/, shim/); router/smoke.sh runs on a device |
 | .github/workflows/openwrt-packages.yml | CI: lint, tests, SDK builds, release |
 | .github/ISSUE_TEMPLATE/ | Bug report form (versions, ubus status, logread) + contact links (upstream forum, security advisory) |
-| README.md | Fork section: features, LuCI pages, versioning table, reporting, security note (screenshots pending); rest is upstream text |
+| README.md | Fork section: features, LuCI pages, versioning table, reporting, security note, screenshots (images/luci-*.png); rest is upstream text |
 | INSTALLATION.md | Package install/configure/verify/migrate/upgrade/uninstall/rollback/troubleshooting/trust first; upstream setup.sh sections labelled "(setup.sh installs only)" |
 | CHANGELOG.md | "OpenWrt package / LuCI app (fork)" section on top (per owrt release), upstream history below |
 | CONTRIBUTING.md, SECURITY.md | Dev checks, coding rules, commit style; private vulnerability reporting + by-design security notes |
