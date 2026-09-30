@@ -19,6 +19,15 @@ out=$(bash "${S}" --check-config "${F}/config.badtype.sh" 2>&1); rc=$?
 assert_eq "bad type: exit 1" 1 "${rc}"
 assert_contains "bad type: message" "not a valid value of type: 'integer'" "${out}"
 
+out=$(bash "${S}" --check-config "${F}/config.badrates.sh" 2>&1); rc=$?
+assert_eq "bad rates: exit 1" 1 "${rc}"
+assert_contains "bad rates: message" "min <= base <= max" "${out}"
+assert_contains "bad rates: prefix" "ERROR;" "${out}"
+
+out=$(bash "${S}" --check-config "${F}/config.sameif.sh" 2>&1); rc=$?
+assert_eq "same if: exit 1" 1 "${rc}"
+assert_contains "same if: message" "cannot be the same" "${out}"
+
 out=$(bash "${S}" --check-config "${F}/does-not-exist.sh" 2>&1); rc=$?
 assert_eq "missing file: exit 1" 1 "${rc}"
 assert_contains "missing file: message" "No config file found" "${out}"

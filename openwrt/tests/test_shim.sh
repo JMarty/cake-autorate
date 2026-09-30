@@ -16,7 +16,7 @@ assert_eq "section type" "instance" "${t}"
 items=""
 collect() { items="${items}${items:+,}$1"; }
 config_list_foreach wan reflectors collect
-assert_eq "list read" "1.1.1.1,8.8.8.8" "${items}"
+assert_eq "list read" "1.1.1.1,8.8.8.8,9.9.9.9" "${items}"
 config_get p wan ping_prefix_string
 assert_eq "value with spaces" "mwan3 use wan exec" "${p}"
 names=""

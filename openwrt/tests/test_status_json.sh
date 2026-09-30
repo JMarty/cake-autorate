@@ -26,7 +26,16 @@ run_path=$(mktemp -d)
 write_status_file
 f="${run_path}/status.json"
 [ -f "${f}" ] && pass "file written" || fail "file written"
-[ -f "${f}.tmp" ] && fail "tmp removed" || pass "tmp removed"
+[ -e "${f}.tmp" ] && fail "no tmp file" || pass "no tmp file"
+jq -e '.updated_us > 0' "${f}" >/dev/null && pass "updated_us" || fail "updated_us" "$(cat "${f}")"
+# The writer must not fork/exec anything: run it with an empty PATH.
+( PATH=/nonexistent; write_status_file ) && pass "writer runs without external commands" || fail "writer runs without external commands"
+jq -e . "${f}" >/dev/null && pass "still valid json" || fail "still valid json"
+instance_id='we"ird\id'
+write_status_file
+assert_eq "json escaping" 'we"ird\id' "$(jq -r .instance "${f}")"
+instance_id=wan
+write_status_file
 jq -e . "${f}" >/dev/null && pass "valid json" || fail "valid json" "$(cat "${f}")"
 assert_eq "instance" "wan" "$(jq -r .instance "${f}")"
 assert_eq "state" "idle" "$(jq -r .state "${f}")"

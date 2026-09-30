@@ -42,8 +42,13 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   reconfiguring one instance leaves the others running (mwan3-friendly).
 - Live status: each instance writes `/var/run/cake-autorate/<id>/status.json`,
   written at a configurable interval (status_file_interval_ms, default
-  1000 ms; 0 disables).
-- `cake-autorate.sh --check-config <file>` validates settings before restart.
+  1000 ms; 0 disables). Written in place with a fork-free builtin printf;
+  carries `updated_us`; readers must tolerate an empty/partial file.
+- `cake-autorate.sh --check-config <file>` validates settings (incl.
+  cross-field relations via `check_config_relations`) before restart.
+- On exit CAKE is reset to the base rates (`reset_shaper_rates_on_exit=1`);
+  the run dir is only removed by the process that created it; a missing
+  `log_file_path_override` dir falls back to /var/log with a warning.
 - MQTT publisher as a separate service (`mqtt-publisher.init`) configured
   from UCI.
 - rpcd/ubus API (`ubus call cake-autorate <method>`): status, defaults,

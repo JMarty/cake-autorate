@@ -142,6 +142,9 @@ log_file_export_compress=1 # compress log file exports using gzip and append .gz
 # interval in ms between writes of the per-instance status snapshot
 # (${run_path}/status.json, read by the LuCI app); 0 disables the status file
 status_file_interval_ms=1000
+# fork: on stop/restart/uninstall set CAKE back to the base rates, so a stopped
+# instance does not leave the link throttled at whatever rate it last applied
+reset_shaper_rates_on_exit=1
 
 ### In multi-homed setups, it is mandatory to use either ping_extra_args
 ### or ping_prefix_string to direct the pings through $dl_if and $ul_if.

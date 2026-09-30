@@ -10,6 +10,7 @@ more about cake-autorate. This is the history of changes.
 ## [Unreleased]
 
 - Introduce support for running on Debian/Ubuntu
+- OpenWrt package / LuCI app: fork-free status.json writer (adds `updated_us`), reset CAKE to base rates on exit (`reset_shaper_rates_on_exit`), run-dir ownership guard, log path override fallback, `--check-config` validates cross-field relations
 
 ## 2026-03-04 - Version 3.5.0
 

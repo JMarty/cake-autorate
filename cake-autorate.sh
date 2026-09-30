@@ -114,6 +114,14 @@ cleanup_and_killall()
 
 	terminate "${pinger_pids[*]}"
 
+	# fork: return CAKE to the base rates (only once the controller had started)
+	if (( ${reset_shaper_rates_on_exit:-0} && ${base_shaper_rate_kbps[DL]:-0} > 0 ))
+	then
+		(( ${adjust_shaper_rate[DL]:-0} )) && tc qdisc change root dev "${dl_if}" cake bandwidth "${base_shaper_rate_kbps[DL]}Kbit" 2> /dev/null
+		(( ${adjust_shaper_rate[UL]:-0} )) && tc qdisc change root dev "${ul_if}" cake bandwidth "${base_shaper_rate_kbps[UL]}Kbit" 2> /dev/null
+		log_msg "INFO" "Reset CAKE to base rates on exit."
+	fi
+
 	((terminate_maintain_log_file_timeout_ms=log_file_buffer_timeout_ms+500))
 	terminate "${proc_pids['maintain_log_file']:-}" \
 		"${terminate_maintain_log_file_timeout_ms}"
@@ -121,8 +129,9 @@ cleanup_and_killall()
 
 	unset "proc_pids[maintain_log_file]" "proc_pids[log_file_buffer_timer]"
 
-	# Only remove the per-instance run dir; before instance_id is known run_path is the shared parent.
-	[[ -n ${instance_id:-} && -d ${run_path} ]] && rm -r "${run_path}"
+	# fork: only remove the run dir this process created (a failed start must not
+	# delete a running instance's dir; before instance_id is known run_path is the shared parent)
+	(( ${run_path_owned:-0} )) && [[ -d ${run_path} ]] && rm -r "${run_path}"
 	rmdir /var/run/cake-autorate 2>/dev/null
 
 	# give some time for processes to gracefully exit
@@ -1056,6 +1065,11 @@ unset valid_config_entries user_config config_error_count key
 
 if ((check_config_only))
 then
+	# fork: also validate cross-field relations (normally checked after startup)
+	# shellcheck source=config.primary.sh
+	. "${config_path}"
+	# shellcheck disable=SC2310
+	check_config_relations || exit 1
 	printf 'Config file %s is valid.\n' "${config_path}"
 	exit 0
 fi
@@ -1087,12 +1101,12 @@ if [[ -n ${log_file_path_override-} ]]
 then
 	if [[ ! -d ${log_file_path_override} ]]
 	then
-		broken_log_file_path_override="${log_file_path_override}"
+		# fork: e.g. USB storage not mounted yet at boot -- log to /var/log instead of giving up
 		log_file_path="/var/log/cake-autorate${instance_id:+.${instance_id}}.log"
-		log_msg "ERROR" "Log file path override: '${broken_log_file_path_override}' does not exist. Exiting now."
-		exit 1
+		log_msg "WARNING" "Log file path override: '${log_file_path_override}' does not exist; logging to ${log_file_path} instead."
+	else
+		log_file_path="${log_file_path_override}/cake-autorate${instance_id:+.${instance_id}}.log"
 	fi
-	log_file_path="${log_file_path_override}/cake-autorate${instance_id:+.${instance_id}}.log"
 else
 	log_file_path="/var/log/cake-autorate${instance_id:+.${instance_id}}.log"
 fi
@@ -1109,9 +1123,11 @@ then
 		log_msg "DEBUG" "${run_path} already exists but no conflicting instance is running. Removing and recreating."
 		rm -r "${run_path}"
 		( umask 077 && mkdir -p "${run_path}" )
+		run_path_owned=1  # fork
 	fi
 else
 	( umask 077 && mkdir -p "${run_path}" )
+	run_path_owned=1  # fork
 fi
 
 ((log_to_file)) && rotate_log_file

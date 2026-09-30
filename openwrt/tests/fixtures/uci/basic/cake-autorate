@@ -15,6 +15,7 @@ config instance 'wan'
 	option ping_extra_args '-I "wwan0"'
 	list reflectors '1.1.1.1'
 	list reflectors '8.8.8.8'
+	list reflectors '9.9.9.9'
 
 config instance 'lte'
 	option enabled '0'

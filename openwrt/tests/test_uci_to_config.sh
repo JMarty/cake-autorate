@@ -16,7 +16,7 @@ f="${out_dir}/config.wan.sh"
 c=$(cat "${f}")
 assert_contains "basic: header" "DO NOT EDIT" "${c}"
 assert_contains "basic: dl_if" $'\ndl_if="ifb4wan"\n' "${c}"
-assert_contains "basic: list -> array" $'\nreflectors=("1.1.1.1" "8.8.8.8")\n' "${c}"
+assert_contains "basic: list -> array" $'\nreflectors=("1.1.1.1" "8.8.8.8" "9.9.9.9")\n' "${c}"
 assert_contains "basic: spaces kept" $'\nping_prefix_string="mwan3 use wan exec"\n' "${c}"
 assert_contains "basic: quotes escaped" $'\nping_extra_args="-I \\"wwan0\\""\n' "${c}"
 assert_contains "basic: global merged" $'\nlog_file_max_time_mins="5"\n' "${c}"
