@@ -64,6 +64,21 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - LuCI pages (Services -> CAKE Autorate): Overview, Instances, Log, MQTT,
   plus a Status-page widget. Rolling charts with zoom, synced hover and
   dynamic scale; instance grid shows defaults.
+- LuCI Instances page (luci-app 1.1.0): grid columns enabled (inline),
+  dl_if, ul_if, base DL/UL rate are also editable in the modal; booleans
+  backed by defaults.sh are tri-state (Default / On / Off, `flagOpt`) so
+  "off" survives when the built-in default is on; cross-field validation
+  (min >= 1, min <= base <= max, connection_active_thr <= min rates,
+  dl_if != ul_if, unique interfaces) using sibling form values -> global
+  section -> built-in default; add/clone reject invalid, duplicate or
+  reserved (`global`, `mqtt`) names, clones are created disabled without
+  interfaces/SQM link; "Create SQM instance…" sits above the map; plain
+  LuCI save/apply (no custom handleSaveApply). Warns when the backend has
+  no `defaults` metadata.
+- LuCI talks only to the `cake-autorate` ubus object (service start/stop via
+  `service_control`, log download via cgi-download from
+  /tmp/cake-autorate-export); the ACL grants no `luci`/`file`/`service` ubus
+  objects and no `sqm`/`mwan3` UCI access.
 - CI: shellcheck, offline test suite, OpenWrt SDK package builds, releases
   from tags.
 

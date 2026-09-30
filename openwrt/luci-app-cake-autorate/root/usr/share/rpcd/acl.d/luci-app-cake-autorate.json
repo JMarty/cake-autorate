@@ -2,22 +2,18 @@
 	"luci-app-cake-autorate": {
 		"description": "Grant access to the cake-autorate web interface",
 		"read": {
-			"uci": [ "cake-autorate", "sqm", "mwan3" ],
+			"uci": [ "cake-autorate" ],
 			"ubus": {
-				"cake-autorate": [ "status", "defaults", "check_config", "log_tail", "system_info", "mqtt_status" ],
-				"file": [ "read", "stat" ],
-				"service": [ "list" ],
-				"luci": [ "getInitList" ]
+				"cake-autorate": [ "status", "defaults", "check_config", "log_tail", "system_info", "mqtt_status" ]
 			},
 			"file": {
-				"/var/log/cake-autorate*": [ "read" ]
+				"/tmp/cake-autorate-export/*": [ "read" ]
 			}
 		},
 		"write": {
-			"uci": [ "cake-autorate", "sqm" ],
+			"uci": [ "cake-autorate" ],
 			"ubus": {
-				"cake-autorate": [ "instance_control", "log_export", "log_reset", "sqm_create", "sqm_sync_rates" ],
-				"luci": [ "setInitAction" ]
+				"cake-autorate": [ "instance_control", "service_control", "log_export", "log_reset", "sqm_create", "sqm_sync_rates" ]
 			}
 		}
 	}

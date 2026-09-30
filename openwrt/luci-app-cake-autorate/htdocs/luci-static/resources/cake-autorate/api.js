@@ -13,12 +13,7 @@ var callSystemInfo = rpc.declare({ object: 'cake-autorate', method: 'system_info
 var callSqmCreate = rpc.declare({ object: 'cake-autorate', method: 'sqm_create', params: ['interface', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
 var callSqmSyncRates = rpc.declare({ object: 'cake-autorate', method: 'sqm_sync_rates', params: ['sqm_id', 'dl_kbps', 'ul_kbps'], expect: { '': {} } });
 var callMqttStatus = rpc.declare({ object: 'cake-autorate', method: 'mqtt_status', expect: { '': {} } });
-var callInitAction = rpc.declare({ object: 'luci', method: 'setInitAction', params: ['name', 'action'], expect: { result: false } });
-/* ubus file.read returns the raw file body unless base64 is explicitly
- * requested, in which case the reply is base64-encoded -- callers that need
- * to decode the data (e.g. Blob download of a binary/gzip file) must pass
- * base64=true and decode with atob(). */
-var callFileRead = rpc.declare({ object: 'file', method: 'read', params: ['path', 'base64'], expect: { data: '' } });
+var callServiceControl = rpc.declare({ object: 'cake-autorate', method: 'service_control', params: ['service', 'action'], expect: { '': {} } });
 
 return baseclass.extend({
 	getStatus: callStatus,
@@ -32,14 +27,24 @@ return baseclass.extend({
 	sqmCreate: callSqmCreate,
 	sqmSyncRates: callSqmSyncRates,
 	getMqttStatus: callMqttStatus,
-	callInitAction: callInitAction,
-	callFileRead: callFileRead,
+	serviceControl: callServiceControl,
 
 	fmtKbps: function(kbps) {
 		if (kbps == null || isNaN(kbps)) return '-';
 		if (kbps >= 1000000) return (kbps / 1000000).toFixed(2) + ' ' + _('Gbit/s');
 		if (kbps >= 1000) return (kbps / 1000).toFixed(1) + ' ' + _('Mbit/s');
 		return Math.round(kbps) + ' ' + _('kbit/s');
+	},
+
+	/* Short chart-axis label: >= 10 in the chosen unit -> no decimals,
+	 * below that one decimal with a trailing ".0" trimmed. */
+	fmtKbpsAxis: function(kbps) {
+		if (kbps == null || isNaN(kbps)) return '';
+		var v = Number(kbps), unit = _('kbit/s');
+		if (Math.abs(v) >= 1000000) { v = v / 1000000; unit = _('Gbit/s'); }
+		else if (Math.abs(v) >= 1000) { v = v / 1000; unit = _('Mbit/s'); }
+		var txt = (Math.abs(v) >= 10) ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
+		return '%s %s'.format(txt, unit);
 	},
 
 	fmtUptime: function(s) {

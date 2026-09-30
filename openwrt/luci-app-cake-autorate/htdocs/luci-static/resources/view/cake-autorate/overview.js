@@ -363,9 +363,9 @@ return view.extend({
 			return E('button', {
 				'class': 'btn cbi-button cbi-button-' + style,
 				'click': ui.createHandlerFn(self, function() {
-					return api.callInitAction('cake-autorate', action).then(function(res) {
-						if (!res)
-							ui.addNotification(null, E('p', {}, _('Action failed')), 'error');
+					return api.serviceControl('cake-autorate', action).then(function(res) {
+						if (!res || !res.ok)
+							ui.addNotification(null, E('p', {}, (res && res.error) || _('Action failed')), 'error');
 						return self.pollTick();
 					});
 				})

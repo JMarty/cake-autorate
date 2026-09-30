@@ -1,10 +1,10 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-cake-autorate
-PKG_VERSION:=1.0.0
+PKG_VERSION:=1.1.0
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0-only
-PKG_MAINTAINER:=janklovicsmarton
+PKG_MAINTAINER:=janklovicsmarton <janklovicsmarton@users.noreply.github.com>
 
 LUCI_TITLE:=LuCI interface for cake-autorate
 LUCI_DESCRIPTION:=Web UI for the cake-autorate adaptive CAKE bandwidth controller: live status with rolling charts, per-instance control, full configuration, logs and MQTT publisher management.

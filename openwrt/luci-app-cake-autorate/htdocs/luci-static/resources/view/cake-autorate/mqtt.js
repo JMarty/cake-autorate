@@ -53,9 +53,9 @@ return view.extend({
 
 	serviceAction: function(action) {
 		var self = this;
-		return api.callInitAction('mqtt-publisher', action).then(function(res) {
-			if (!res)
-				ui.addNotification(null, E('p', {}, _('Action failed')), 'error');
+		return api.serviceControl('mqtt-publisher', action).then(function(res) {
+			if (!res || !res.ok)
+				ui.addNotification(null, E('p', {}, (res && res.error) || _('Action failed')), 'error');
 			return self.refreshStatus();
 		});
 	},
@@ -117,7 +117,7 @@ return view.extend({
 	handleSaveApply: function(ev, mode) {
 		var self = this;
 		return this.super('handleSaveApply', [ ev, mode ]).then(function() {
-			return api.callInitAction('mqtt-publisher', 'restart').catch(function() {});
+			return api.serviceControl('mqtt-publisher', 'restart').catch(function() {});
 		}).then(function() {
 			return self.refreshStatus();
 		});

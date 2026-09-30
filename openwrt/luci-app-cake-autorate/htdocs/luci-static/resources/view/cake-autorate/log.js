@@ -3,17 +3,17 @@
 'require poll';
 'require ui';
 'require uci';
+'require fs';
 'require cake-autorate.api as api';
 
 /*
  * log.js -- log viewer: tails the on-router log file for one instance,
  * with a lines cap, a client-side record-type filter and optional 5s
- * auto-refresh. Reset truncates the file (after confirmation); Export
- * downloads the gzip-compressed export produced by `cake-autorate log_export`
- * via the ubus `file read` call, explicitly requesting base64 (base64-decoded
- * into a Blob). ubus file.read returns the raw file body unless base64=true
- * is passed; a falsy/empty reply -- e.g. the file exceeds the ubus file-read
- * size limit -- is reported rather than decoded.
+ * auto-refresh. Reset truncates the file (after confirmation). Export asks
+ * the backend (`log_export`) to move the export to
+ * /tmp/cake-autorate-export/<id>.log[.gz] (only the newest export per
+ * instance is kept) and then downloads it through LuCI's cgi-download
+ * (fs.read_direct), so there is no ubus file-read size limit.
  */
 
 var LINE_OPTIONS = [100, 500, 2000];
@@ -24,15 +24,6 @@ function fmtSize(bytes) {
 	if (bytes < 1024) return bytes + ' B';
 	if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
 	return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-/* base64 → Uint8Array, throws on malformed input (caller wraps in try/catch) */
-function base64ToBytes(b64) {
-	var bin = atob(b64);
-	var bytes = new Uint8Array(bin.length);
-	for (var i = 0; i < bin.length; i++)
-		bytes[i] = bin.charCodeAt(i);
-	return bytes;
 }
 
 function basename(path) {
@@ -134,27 +125,15 @@ return view.extend({
 				return;
 			}
 
-			/* Explicitly request base64: ubus `file read` returns the raw file
-			 * body by default and only base64-encodes the reply when this
-			 * param is true -- decoding a raw (non-base64) gzip body with
-			 * atob() would throw on every export. */
-			return api.callFileRead(res.path, true).then(function(data) {
-				if (!data) {
-					ui.addNotification(null, E('p', {}, _('Export succeeded on the router (%s) but the file could not be downloaded — it may exceed the 256 KiB ubus file-read limit. Fetch it over SSH/SCP.').format(res.path)), 'error');
-					return;
-				}
-				try {
-					var bytes = base64ToBytes(data);
-					var blob = new Blob([ bytes ], { type: 'application/gzip' });
-					var url = URL.createObjectURL(blob);
-					var link = E('a', { 'href': url, 'download': basename(res.path) });
-					document.body.appendChild(link);
-					link.click();
-					document.body.removeChild(link);
-					URL.revokeObjectURL(url);
-				} catch (e) {
-					ui.addNotification(null, E('p', {}, _('Failed to prepare the log file for download: %s').format(String((e && e.message) || e))), 'error');
-				}
+			return fs.read_direct(res.path, 'blob').then(function(blob) {
+				var url = URL.createObjectURL(blob);
+				var link = E('a', { 'href': url, 'download': basename(res.path) });
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				URL.revokeObjectURL(url);
+			}).catch(function(err) {
+				ui.addNotification(null, E('p', {}, _('Export succeeded on the router (%s) but the download failed: %s').format(res.path, String((err && err.message) || err))), 'error');
 			});
 		}).catch(function(err) {
 			ui.addNotification(null, E('p', {}, _('Failed to export log: %s').format(String((err && err.message) || err))), 'error');

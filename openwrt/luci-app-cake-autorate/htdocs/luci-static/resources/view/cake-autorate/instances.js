@@ -11,14 +11,17 @@
  * instance, plus a global settings section (log_to_file and friends applied
  * whenever an instance does not override them). Every field is defaults-aware:
  * an empty value is not stored (rmempty) so the instance falls back to the
- * built-in default shown as its placeholder.
+ * global section, then to the built-in default shown as its placeholder.
+ * Defaults-backed booleans are tri-state lists (Default / On / Off, see
+ * flagOpt()) so "off" can be stored even when the built-in default is on.
  *
- * Save flow (see handleSaveApply below): handleSave() writes staged UCI,
- * ui.changes.apply() commits + reloads init scripts, and only then do we
- * run api.checkConfig() per instance against the now-committed config. A
- * checkConfig failure is reported as a prominent notification but is NOT
- * rolled back -- the user's data stays in UCI and they fix + re-apply.
- * sqm_sync_base_rates jobs run only after a clean check.
+ * Save flow: plain LuCI save/apply. The init script renders each instance's
+ * config on (re)start, validates it (--check-config) and, when
+ * sqm_sync_base_rates is set, pushes the base rates into the linked SQM
+ * queue. Config errors are reported per instance on the Overview page.
+ * The modal validators below catch the common cross-field mistakes
+ * (min <= base <= max, connection active threshold, dl_if != ul_if) before
+ * anything is saved.
  */
 
 /* UCI pinger_method values use a hyphen; system_info.pingers keys use '_'. */
@@ -32,35 +35,140 @@ var PINGER_METHODS = [
 	{ key: 'ping', label: _('ping (iputils) — individual pinging (RTTs)') }
 ];
 
+/* Section names that are not instances. */
+var RESERVED = { global: true, mqtt: true };
+
 var defaults = {};
+
+function validInstanceName(name) {
+	return /^[A-Za-z0-9_]+$/.test(name || '') && !RESERVED[name] && !uci.get('cake-autorate', name);
+}
+
+var INVALID_NAME_MSG = _('Instance names may contain only letters, digits and underscores, must be unique and cannot be "global" or "mqtt".');
 
 /*
  * opt() -- every instance/global option goes through this so defaults
  * metadata (placeholder + description) is applied uniformly. modalonly
- * defaults to true; callers that need a grid column pass modalonly:false
- * in `extra`.
+ * defaults to true; grid columns pass modalonly:null in `extra` (shown in
+ * the grid AND in the edit modal -- modalonly:false would drop the field
+ * from the modal).
  */
 function opt(s, tab, widget, name, title, extra) {
 	var o = tab ? s.taboption(tab, widget, name, title) : s.option(widget, name, title);
 	var d = defaults[name];
-	if (d && !d.list) {
+	if (d && d.description) o.description = d.description;
+	if (d && !d.list && widget === form.Value) {
 		o.placeholder = d.value;
-		if (d.description) o.description = d.description;
 		/* Grid cells: an unset option runs on the built-in default, so show
 		 * that (greyed) instead of LuCI's generic "none". */
-		if (widget === form.Value)
-			o.textvalue = function(section_id) {
-				var v = this.cfgvalue(section_id);
-				if (v != null && v !== '')
-					return widget.prototype.textvalue.apply(this, arguments);
-				return E('span', { 'style': 'color:#888', 'title': _('built-in default') }, String(this.placeholder));
-			};
+		o.textvalue = function(section_id) {
+			var v = this.cfgvalue(section_id);
+			if (v != null && v !== '')
+				return widget.prototype.textvalue.apply(this, arguments);
+			return E('span', { 'style': 'opacity:.6', 'title': _('built-in default') }, String(this.placeholder));
+		};
 	}
 	o.rmempty = true;
 	o.modalonly = true;
 	if (extra) Object.assign(o, extra);
 	return o;
 }
+
+/* Tri-state for defaults-backed booleans: '' = inherit (global section, else
+ * built-in default), '1' = on, '0' = off. A form.Flag cannot express "off"
+ * when the built-in default is on (its unchecked value equals its default
+ * and is removed on save), so every such option uses this instead. */
+function flagOpt(s, tab, name, title) {
+	var d = defaults[name];
+	var o = opt(s, tab, form.ListValue, name, title);
+	/* Without backend metadata the built-in default is unknown. */
+	var dfltLabel = d ? _('Default (%s)').format(String(d.value) === '1' ? _('on') : _('off')) : _('Default');
+	o.optional = true;
+	o.value('', dfltLabel);
+	o.value('1', _('On'));
+	o.value('0', _('Off'));
+	o.textvalue = function(section_id) {
+		var v = this.cfgvalue(section_id);
+		return v === '1' ? _('On') : v === '0' ? _('Off') : E('span', { 'style': 'opacity:.6' }, dfltLabel);
+	};
+	return o;
+}
+
+/* Raw effective value of `key` for the section being edited: the field's own
+ * pending value, a sibling field's form value (the stored section value if
+ * that widget is not rendered), the global section, then the built-in
+ * default. `opt` is the option whose validate() is running. */
+function effectiveRaw(opt, section_id, key, ownKey, ownValue) {
+	var v = (key === ownKey) ? ownValue : opt.section.formvalue(section_id, key);
+	if (v == null) v = uci.get('cake-autorate', section_id, key);
+	if (v == null || v === '') v = uci.get('cake-autorate', 'global', key);
+	if (v == null || v === '') v = (defaults[key] || {}).value;
+	return v;
+}
+
+function effectiveValue(opt, section_id, key, ownKey, ownValue) {
+	return parseFloat(effectiveRaw(opt, section_id, key, ownKey, ownValue));
+}
+
+function ratesValidate(dir, ownKey) {
+	return function(section_id, value) {
+		var lo = effectiveValue(this, section_id, 'min_' + dir + '_shaper_rate_kbps', ownKey, value),
+		    mid = effectiveValue(this, section_id, 'base_' + dir + '_shaper_rate_kbps', ownKey, value),
+		    hi = effectiveValue(this, section_id, 'max_' + dir + '_shaper_rate_kbps', ownKey, value),
+		    act = effectiveValue(this, section_id, 'connection_active_thr_kbps', ownKey, value);
+		if (isNaN(lo) || isNaN(mid) || isNaN(hi)) return true;
+		if (lo < 1) return _('Minimum rate must be at least 1 kbit/s');
+		if (!(lo <= mid && mid <= hi)) return _('Rates must satisfy min ≤ base ≤ max');
+		if (!isNaN(act) && act > lo) return _('Must not be below the connection active threshold (%d kbit/s)').format(act);
+		return true;
+	};
+}
+
+function activeThrValidate(section_id, value) {
+	var act = effectiveValue(this, section_id, 'connection_active_thr_kbps', 'connection_active_thr_kbps', value),
+	    minDl = effectiveValue(this, section_id, 'min_dl_shaper_rate_kbps', 'connection_active_thr_kbps', value),
+	    minUl = effectiveValue(this, section_id, 'min_ul_shaper_rate_kbps', 'connection_active_thr_kbps', value);
+	if (isNaN(act)) return true;
+	if (!isNaN(minDl) && act > minDl)
+		return _('Must not exceed the minimum download rate (%d kbit/s)').format(minDl);
+	if (!isNaN(minUl) && act > minUl)
+		return _('Must not exceed the minimum upload rate (%d kbit/s)').format(minUl);
+	return true;
+}
+
+/* Interface fields: unique across instances and dl_if != ul_if. */
+function ifValidate(ownKey, otherKey) {
+	return function(section_id, value) {
+		if (!value) return true;
+		var others = uci.sections('cake-autorate', 'instance');
+		for (var i = 0; i < others.length; i++) {
+			if (others[i]['.name'] === section_id) continue;
+			if (others[i][ownKey] === value)
+				return _('Interface already used by instance %s').format(others[i]['.name']);
+		}
+		if (value === effectiveRaw(this, section_id, otherKey, ownKey, value))
+			return _('Download and upload interface must differ');
+		return true;
+	};
+}
+
+/* Cross-field validators only run for the field being edited; re-run the
+ * related fields' validation on change so a fixed pair clears both errors. */
+function revalidate(keys) {
+	return function(ev, section_id) {
+		for (var i = 0; i < keys.length; i++) {
+			var el = this.section.getUIElement(section_id, keys[i]);
+			if (el && typeof el.triggerValidation === 'function')
+				el.triggerValidation();
+		}
+	};
+}
+
+var RATE_KEYS = [
+	'min_dl_shaper_rate_kbps', 'base_dl_shaper_rate_kbps', 'max_dl_shaper_rate_kbps',
+	'min_ul_shaper_rate_kbps', 'base_ul_shaper_rate_kbps', 'max_ul_shaper_rate_kbps',
+	'connection_active_thr_kbps'
+];
 
 return view.extend({
 	load: function() {
@@ -70,46 +178,109 @@ return view.extend({
 			api.getDefaults(),
 			api.getSystemInfo()
 		]).then(function(data) {
-			self.defaults = data[1].defaults || {};
+			self.defaults = (data[1] && data[1].defaults) || {};
 			self.sysinfo = data[2] || {};
 			defaults = self.defaults;
 			return data;
 		});
 	},
 
-	/* handleSaveApply -- see file header for the ruling this implements. */
-	handleSaveApply: function(ev, mode) {
-		var self = this;
-		return this.handleSave(ev).then(function() {
-			return ui.changes.apply(mode == '0');
-		}).then(function() {
-			var ids = uci.sections('cake-autorate', 'instance').map(function(s2) { return s2['.name']; });
-			return Promise.all(ids.map(function(id) { return api.checkConfig(id); })).then(function(results) {
-				var bad = [];
-				for (var i = 0; i < results.length; i++)
-					if (results[i] && results[i].ok && results[i].valid === false)
-						bad.push(ids[i] + ': ' + (results[i].errors || []).join('; '));
+	/* "Create SQM instance…" dialog; the page reloads on success so the new
+	 * queue shows up in the "Linked SQM instance" list. */
+	showCreateSqm: function() {
+		var dlDefault = (this.defaults.base_dl_shaper_rate_kbps || {}).value || 20000;
+		var ulDefault = (this.defaults.base_ul_shaper_rate_kbps || {}).value || 10000;
 
-				if (bad.length) {
-					ui.addNotification(null, E('p', {}, [
-						E('strong', {}, _('Configuration rejected by cake-autorate:')),
-						E('br'),
-						bad.join(' ')
-					]), 'error');
-					return null;
-				}
+		var ifaceInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': '' });
+		var dlInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': String(dlDefault) });
+		var ulInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': String(ulDefault) });
 
-				/* sqm_sync_base_rates: push base rates into the linked SQM queue. */
-				var jobs = [];
-				uci.sections('cake-autorate', 'instance').forEach(function(s2) {
-					if (s2.sqm_sync_base_rates == '1' && s2.sqm_instance)
-						jobs.push(api.sqmSyncRates(s2.sqm_instance,
-							parseInt(s2.base_dl_shaper_rate_kbps || (self.defaults.base_dl_shaper_rate_kbps || {}).value || 0, 10),
-							parseInt(s2.base_ul_shaper_rate_kbps || (self.defaults.base_ul_shaper_rate_kbps || {}).value || 0, 10)));
-				});
-				return Promise.all(jobs);
-			});
-		});
+		ui.showModal(_('Create SQM instance'), [
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Interface')),
+				E('div', { 'class': 'cbi-value-field' }, ifaceInput)
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Download (kbps)')),
+				E('div', { 'class': 'cbi-value-field' }, dlInput)
+			]),
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Upload (kbps)')),
+				E('div', { 'class': 'cbi-value-field' }, ulInput)
+			]),
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'btn',
+					'click': ui.hideModal
+				}, _('Cancel')),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button-positive',
+					'click': function() {
+						return api.sqmCreate(ifaceInput.value, parseInt(dlInput.value, 10) || 0, parseInt(ulInput.value, 10) || 0)
+							.then(function(res) {
+								ui.hideModal();
+								if (res && res.ok) {
+									ui.addNotification(null, E('p', {}, _('SQM instance created.')), 'info');
+									location.reload();
+								} else {
+									ui.addNotification(null, E('p', {}, (res && res.error) || _('Failed to create SQM instance.')), 'error');
+								}
+							});
+					}
+				}, _('Create'))
+			])
+		]);
+	},
+
+	/* Clone dialog: copies every option except the per-WAN ones (enabled,
+	 * interfaces, linked SQM queue); the copy is created disabled. */
+	showClone: function(map, sid) {
+		var nameInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': sid + '_2' });
+		/* Errors are shown inside the dialog: a page notification would be
+		 * hidden behind the modal overlay. */
+		var errorEl = E('div', { 'class': 'alert-message error', 'style': 'display:none' });
+
+		ui.showModal(_('Clone instance "%s"').format(sid), [
+			E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Name of the copy')),
+				E('div', { 'class': 'cbi-value-field' }, [
+					nameInput,
+					E('div', { 'class': 'cbi-value-description' }, _('Letters, digits and underscores only.'))
+				])
+			]),
+			errorEl,
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'btn',
+					'click': ui.hideModal
+				}, _('Cancel')),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button-positive',
+					'click': function() {
+						var newId = nameInput.value;
+						if (!validInstanceName(newId)) {
+							errorEl.textContent = INVALID_NAME_MSG;
+							errorEl.style.display = '';
+							return;
+						}
+						var SKIP = { enabled: true, dl_if: true, ul_if: true, sqm_instance: true };
+						var src = uci.get('cake-autorate', sid) || {};
+						uci.add('cake-autorate', 'instance', newId);
+						for (var k in src)
+							if (k.charAt(0) !== '.' && !SKIP[k])
+								uci.set('cake-autorate', newId, k, src[k]);
+						uci.set('cake-autorate', newId, 'enabled', '0');
+						ui.hideModal();
+						return map.save(null, true).then(function() {
+							ui.addNotification(null, E('p', {}, _('Copy "%s" created disabled. Set its interfaces, then enable it.').format(newId)), 'info');
+						});
+					}
+				}, _('Clone'))
+			])
+		]);
+		nameInput.focus();
 	},
 
 	render: function() {
@@ -117,20 +288,20 @@ return view.extend({
 		var sysinfo = this.sysinfo || {};
 
 		var m = new form.Map('cake-autorate', _('CAKE Autorate — Instances'),
-			_('One instance per shaped WAN. Values left empty use the built-in default shown as placeholder. Changes restart only the edited instance.'));
+			_('One instance per shaped WAN. Values left empty use the global setting, else the built-in default shown as placeholder. Changes restart only the edited instance.'));
 
 		/* ── Global settings ─────────────────────────────────────── */
 		var gs = m.section(form.NamedSection, 'global', 'global', _('Global settings'),
 			_('Applied to every instance unless overridden per instance.'));
 		gs.addremove = false;
 
-		opt(gs, null, form.Flag, 'log_to_file', _('Log to file'), { modalonly: false });
-		opt(gs, null, form.Value, 'log_file_max_time_mins', _('Log file max time (mins)'), { datatype: 'uinteger', modalonly: false });
-		opt(gs, null, form.Value, 'log_file_max_size_KB', _('Log file max size (KB)'), { datatype: 'uinteger', modalonly: false });
 		/* opt() branches to s.option(...) when tab is null/falsy -- LuCI's
 		 * AbstractSection.taboption() throws ReferenceError for an
 		 * unregistered tab, so a bare taboption(null, ...) call on this
 		 * untabbed NamedSection would crash the whole page. */
+		flagOpt(gs, null, 'log_to_file', _('Log to file'));
+		opt(gs, null, form.Value, 'log_file_max_time_mins', _('Log file max time (mins)'), { datatype: 'uinteger' });
+		opt(gs, null, form.Value, 'log_file_max_size_KB', _('Log file max size (KB)'), { datatype: 'uinteger' });
 
 		/* ── Instances grid ───────────────────────────────────────── */
 		var s = m.section(form.GridSection, 'instance', _('Instances'));
@@ -138,7 +309,15 @@ return view.extend({
 		s.anonymous = false;
 		s.nodescriptions = true;
 		s.addbtntitle = _('Add instance…');
-		s.modaltitle = function(sid) { return _('Instance') + ' » ' + sid; };
+		s.modaltitle = function(sid) { return _('Instance » %s').format(sid); };
+
+		s.handleAdd = function(ev, name) {
+			if (!validInstanceName(name)) {
+				ui.addNotification(null, E('p', {}, INVALID_NAME_MSG), 'error');
+				return Promise.resolve();
+			}
+			return form.GridSection.prototype.handleAdd.apply(this, [ ev, name ]);
+		};
 
 		s.tab('general', _('General'));
 		s.tab('pinger', _('Pinger'));
@@ -153,18 +332,7 @@ return view.extend({
 			dom.append(tdEl.lastChild, E('button', {
 				'class': 'btn cbi-button cbi-button-neutral',
 				'click': ui.createHandlerFn(this, function(sid) {
-					var newId = window.prompt(_('Name of the copy (letters, digits, underscore):'), sid + '_2');
-					if (newId == null) return;
-					if (!/^[A-Za-z0-9_]+$/.test(newId) || uci.get('cake-autorate', newId)) {
-						ui.addNotification(null, E('p', {}, _('Invalid or already existing instance name.')), 'error');
-						return;
-					}
-					uci.add('cake-autorate', 'instance', newId);
-					var src = uci.get_all('cake-autorate', sid);
-					for (var k in src)
-						if (k.charAt(0) !== '.')
-							uci.set('cake-autorate', newId, k, src[k]);
-					return this.map.save(null, true);
+					self.showClone(this.map, sid);
 				}, section_id)
 			}, _('Clone')));
 			return tdEl;
@@ -172,30 +340,24 @@ return view.extend({
 
 		/* ══════════════════════════════ general ══════════════════════════════ */
 
-		opt(s, 'general', form.Flag, 'enabled', _('Enabled'), { default: '0', rmempty: false, editable: true, modalonly: false });
+		opt(s, 'general', form.Flag, 'enabled', _('Enabled'), { default: '0', rmempty: false, editable: true, modalonly: null });
 
 		if (sysinfo.sqm_installed) {
-			var oSqm = opt(s, 'general', form.ListValue, 'sqm_instance', _('Linked SQM instance'),
-				{ modalonly: true });
+			var oSqm = opt(s, 'general', form.ListValue, 'sqm_instance', _('Linked SQM instance'));
+			oSqm.optional = true;
 			oSqm.value('', _('— not linked —'));
 			(sysinfo.sqm || []).forEach(function(q) {
-				oSqm.value(q.id, q.id + ' (' + q.interface + ')');
+				oSqm.value(q.id, _('%s (%s)').format(q.id, q.interface));
 			});
 			oSqm.onchange = function(ev, section_id, value) {
 				var q = null, list = sysinfo.sqm || [];
 				for (var i = 0; i < list.length; i++)
 					if (list[i].id === value) { q = list[i]; break; }
 				if (!q) return;
-				var dlIf = this.map.lookupOption('dl_if', section_id);
-				var ulIf = this.map.lookupOption('ul_if', section_id);
-				if (dlIf && dlIf[0]) {
-					var dlInput = dlIf[0].getUIElement(section_id);
-					if (dlInput) dlInput.setValue(q.ifb);
-				}
-				if (ulIf && ulIf[0]) {
-					var ulInput = ulIf[0].getUIElement(section_id);
-					if (ulInput) ulInput.setValue(q.interface);
-				}
+				var dlInput = this.section.getUIElement(section_id, 'dl_if');
+				var ulInput = this.section.getUIElement(section_id, 'ul_if');
+				if (dlInput) dlInput.setValue(q.ifb);
+				if (ulInput) ulInput.setValue(q.interface);
 			};
 		} else {
 			var oSqmMissing = s.taboption('general', form.DummyValue, '_sqm_missing', _('Linked SQM instance'),
@@ -204,145 +366,56 @@ return view.extend({
 			oSqmMissing.rmempty = true;
 		}
 
-		var oCreateSqm = s.taboption('general', form.Button, '_create_sqm', _('Create SQM instance…'));
-		oCreateSqm.modalonly = true;
-		oCreateSqm.inputstyle = 'apply';
-		oCreateSqm.inputtitle = _('Create SQM instance…');
-		oCreateSqm.onclick = ui.createHandlerFn(this, function(ev, section_id) {
-			var dlDefault = uci.get('cake-autorate', section_id, 'base_dl_shaper_rate_kbps') ||
-				(self.defaults.base_dl_shaper_rate_kbps || {}).value || 20000;
-			var ulDefault = uci.get('cake-autorate', section_id, 'base_ul_shaper_rate_kbps') ||
-				(self.defaults.base_ul_shaper_rate_kbps || {}).value || 10000;
-			var ulIf = uci.get('cake-autorate', section_id, 'ul_if') || '';
-
-			var ifaceInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': ulIf });
-			var dlInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': String(dlDefault) });
-			var ulInput = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'value': String(ulDefault) });
-
-			ui.showModal(_('Create SQM instance'), [
-				E('div', { 'class': 'cbi-value' }, [
-					E('label', { 'class': 'cbi-value-title' }, _('Interface')),
-					E('div', { 'class': 'cbi-value-field' }, ifaceInput)
-				]),
-				E('div', { 'class': 'cbi-value' }, [
-					E('label', { 'class': 'cbi-value-title' }, _('Download (kbps)')),
-					E('div', { 'class': 'cbi-value-field' }, dlInput)
-				]),
-				E('div', { 'class': 'cbi-value' }, [
-					E('label', { 'class': 'cbi-value-title' }, _('Upload (kbps)')),
-					E('div', { 'class': 'cbi-value-field' }, ulInput)
-				]),
-				E('div', { 'class': 'right' }, [
-					E('button', {
-						'class': 'btn',
-						'click': ui.hideModal
-					}, _('Cancel')),
-					' ',
-					E('button', {
-						'class': 'btn cbi-button-positive',
-						'click': function() {
-							return api.sqmCreate(ifaceInput.value, parseInt(dlInput.value, 10) || 0, parseInt(ulInput.value, 10) || 0)
-								.then(function(res) {
-									ui.hideModal();
-									if (res && res.ok) {
-										ui.addNotification(null, E('p', {}, _('SQM instance created.')), 'info');
-										location.reload();
-									} else {
-										ui.addNotification(null, E('p', {}, (res && res.error) || _('Failed to create SQM instance.')), 'error');
-									}
-								});
-						}
-					}, _('Create'))
-				])
-			]);
-		});
-
-		opt(s, 'general', form.Value, 'dl_if', _('Download interface'), {
+		var oDlIf = opt(s, 'general', form.Value, 'dl_if', _('Download interface'), {
 			datatype: 'maxlength(15)',
 			description: _("download side interface, usually SQM's ifb4<wan>"),
-			modalonly: false,
-			validate: function(section_id, value) {
-				if (!value) return true;
-				var others = uci.sections('cake-autorate', 'instance');
-				for (var i = 0; i < others.length; i++) {
-					if (others[i]['.name'] === section_id) continue;
-					if (others[i].dl_if === value)
-						return _('Interface already used by instance %s').format(others[i]['.name']);
-				}
-				return true;
-			}
+			modalonly: null,
+			validate: ifValidate('dl_if', 'ul_if')
 		});
+		oDlIf.onchange = revalidate([ 'ul_if' ]);
 
-		opt(s, 'general', form.Value, 'ul_if', _('Upload interface'), {
+		var oUlIf = opt(s, 'general', form.Value, 'ul_if', _('Upload interface'), {
 			datatype: 'maxlength(15)',
-			modalonly: false,
-			validate: function(section_id, value) {
-				if (!value) return true;
-				var others = uci.sections('cake-autorate', 'instance');
-				for (var i = 0; i < others.length; i++) {
-					if (others[i]['.name'] === section_id) continue;
-					if (others[i].ul_if === value)
-						return _('Interface already used by instance %s').format(others[i]['.name']);
-				}
-				return true;
-			}
+			modalonly: null,
+			validate: ifValidate('ul_if', 'dl_if')
 		});
+		oUlIf.onchange = revalidate([ 'dl_if' ]);
 
-		opt(s, 'general', form.Flag, 'adjust_dl_shaper_rate', _('Adjust download shaper rate'));
-		opt(s, 'general', form.Flag, 'adjust_ul_shaper_rate', _('Adjust upload shaper rate'));
+		flagOpt(s, 'general', 'adjust_dl_shaper_rate', _('Adjust download shaper rate'));
+		flagOpt(s, 'general', 'adjust_ul_shaper_rate', _('Adjust upload shaper rate'));
 
-		/* min <= base <= max cross-field validation, DL and UL. Reads the
-		 * sibling *form* value (falling back to the defaults placeholder
-		 * when empty) so the check reflects what the user is about to save. */
-		function fieldValue(section_id, key) {
-			var lookup = m.lookupOption(key, section_id);
-			var v;
-			if (lookup && lookup[0])
-				v = lookup[0].formvalue(section_id);
-			if (v === undefined || v === null || v === '')
-				v = (defaults[key] || {}).value;
-			return v;
+		function rateOpt(key, title, dir, grid) {
+			var o = opt(s, 'general', form.Value, key, title, { datatype: 'uinteger', validate: ratesValidate(dir, key) });
+			if (grid) o.modalonly = null;
+			o.onchange = revalidate(RATE_KEYS);
+			return o;
 		}
 
-		function minBaseMaxValidate(loKey, midKey, hiKey) {
-			return function(section_id, value) {
-				var lo = fieldValue(section_id, loKey);
-				var mid = fieldValue(section_id, midKey);
-				var hi = fieldValue(section_id, hiKey);
-				var nlo = parseFloat(lo), nmid = parseFloat(mid), nhi = parseFloat(hi);
-				if (isNaN(nlo) || isNaN(nmid) || isNaN(nhi)) return true;
-				if (nlo <= nmid && nmid <= nhi) return true;
-				return _('min ≤ base ≤ max required');
-			};
-		}
+		rateOpt('min_dl_shaper_rate_kbps', _('Min download shaper rate (kbps)'), 'dl', false);
+		rateOpt('base_dl_shaper_rate_kbps', _('Base download shaper rate (kbps)'), 'dl', true);
+		rateOpt('max_dl_shaper_rate_kbps', _('Max download shaper rate (kbps)'), 'dl', false);
 
-		opt(s, 'general', form.Value, 'min_dl_shaper_rate_kbps', _('Min download shaper rate (kbps)'),
-			{ datatype: 'uinteger', modalonly: false, validate: minBaseMaxValidate('min_dl_shaper_rate_kbps', 'base_dl_shaper_rate_kbps', 'max_dl_shaper_rate_kbps') });
-		opt(s, 'general', form.Value, 'base_dl_shaper_rate_kbps', _('Base download shaper rate (kbps)'),
-			{ datatype: 'uinteger', modalonly: false, validate: minBaseMaxValidate('min_dl_shaper_rate_kbps', 'base_dl_shaper_rate_kbps', 'max_dl_shaper_rate_kbps') });
-		opt(s, 'general', form.Value, 'max_dl_shaper_rate_kbps', _('Max download shaper rate (kbps)'),
-			{ datatype: 'uinteger', modalonly: false, validate: minBaseMaxValidate('min_dl_shaper_rate_kbps', 'base_dl_shaper_rate_kbps', 'max_dl_shaper_rate_kbps') });
+		rateOpt('min_ul_shaper_rate_kbps', _('Min upload shaper rate (kbps)'), 'ul', false);
+		rateOpt('base_ul_shaper_rate_kbps', _('Base upload shaper rate (kbps)'), 'ul', true);
+		rateOpt('max_ul_shaper_rate_kbps', _('Max upload shaper rate (kbps)'), 'ul', false);
 
-		opt(s, 'general', form.Value, 'min_ul_shaper_rate_kbps', _('Min upload shaper rate (kbps)'),
-			{ datatype: 'uinteger', validate: minBaseMaxValidate('min_ul_shaper_rate_kbps', 'base_ul_shaper_rate_kbps', 'max_ul_shaper_rate_kbps') });
-		opt(s, 'general', form.Value, 'base_ul_shaper_rate_kbps', _('Base upload shaper rate (kbps)'),
-			{ datatype: 'uinteger', validate: minBaseMaxValidate('min_ul_shaper_rate_kbps', 'base_ul_shaper_rate_kbps', 'max_ul_shaper_rate_kbps') });
-		opt(s, 'general', form.Value, 'max_ul_shaper_rate_kbps', _('Max upload shaper rate (kbps)'),
-			{ datatype: 'uinteger', validate: minBaseMaxValidate('min_ul_shaper_rate_kbps', 'base_ul_shaper_rate_kbps', 'max_ul_shaper_rate_kbps') });
+		var oAct = opt(s, 'general', form.Value, 'connection_active_thr_kbps', _('Connection active threshold (kbps)'),
+			{ datatype: 'uinteger', validate: activeThrValidate });
+		oAct.onchange = revalidate(RATE_KEYS);
 
-		opt(s, 'general', form.Value, 'connection_active_thr_kbps', _('Connection active threshold (kbps)'), { datatype: 'uinteger' });
-
-		opt(s, 'general', form.Flag, 'sqm_sync_base_rates', _('Sync SQM base rates on save'),
-			{ description: _('Keep the linked SQM instance download/upload set to the base rates on save') });
+		opt(s, 'general', form.Flag, 'sqm_sync_base_rates', _('Sync SQM base rates'),
+			{ description: _('Set the linked SQM instance download/upload to the base rates whenever this instance is (re)started') });
 
 		/* ══════════════════════════════ pinger ══════════════════════════════ */
 
 		var oMethod = opt(s, 'pinger', form.ListValue, 'pinger_method', _('Pinger method'));
+		oMethod.optional = true;
+		oMethod.value('', _('Default (%s)').format((defaults.pinger_method || {}).value || 'fping'));
 		PINGER_METHODS.forEach(function(m2) {
 			var key = PING_KEY_MAP[m2.key] || m2.key;
 			var label = m2.label;
 			if (sysinfo.pingers && sysinfo.pingers[key] === false)
-				label += ' (' + _('not installed') + ')';
+				label = _('%s (not installed)').format(label);
 			oMethod.value(m2.key, label);
 		});
 
@@ -351,8 +424,8 @@ return view.extend({
 		opt(s, 'pinger', form.DynamicList, 'reflectors', _('Reflectors'), { datatype: 'host' });
 		opt(s, 'pinger', form.Value, 'reflectors_url', _('Reflectors URL'));
 		opt(s, 'pinger', form.Value, 'reflectors_url_skip_lines', _('Reflectors URL: lines to skip'), { datatype: 'uinteger' });
-		opt(s, 'pinger', form.Flag, 'randomize_reflectors', _('Randomize reflectors'));
-		opt(s, 'pinger', form.Flag, 'retain_reflector_stats', _('Retain reflector stats'));
+		flagOpt(s, 'pinger', 'randomize_reflectors', _('Randomize reflectors'));
+		flagOpt(s, 'pinger', 'retain_reflector_stats', _('Retain reflector stats'));
 		opt(s, 'pinger', form.Value, 'irtt_session_duration_m', _('irtt session duration (mins)'),
 			{ datatype: 'uinteger', depends: { pinger_method: 'irtt' } });
 
@@ -373,7 +446,7 @@ return view.extend({
 		oProbe.value('none', _('none (single WAN)'));
 		if (sysinfo.mwan3_installed) {
 			(sysinfo.mwan3 || []).forEach(function(w) {
-				oProbe.value('mwan3:' + w.name, 'mwan3: ' + w.name + ' (' + w.device + ')');
+				oProbe.value('mwan3:' + w.name, _('mwan3: %s (%s)').format(w.name, w.device));
 			});
 		}
 		oProbe.value('custom', _('custom'));
@@ -388,10 +461,8 @@ return view.extend({
 			return 'none';
 		};
 		oProbe.onchange = function(ev, section_id, value) {
-			var prefixOpt = this.map.lookupOption('ping_prefix_string', section_id);
-			var extraOpt = this.map.lookupOption('ping_extra_args', section_id);
-			var prefixInput = (prefixOpt && prefixOpt[0]) ? prefixOpt[0].getUIElement(section_id) : null;
-			var extraInput = (extraOpt && extraOpt[0]) ? extraOpt[0].getUIElement(section_id) : null;
+			var prefixInput = this.section.getUIElement(section_id, 'ping_prefix_string');
+			var extraInput = this.section.getUIElement(section_id, 'ping_extra_args');
 			if (value === 'none') {
 				/* Clear both fields -- 'none' means no routing prefix/args apply. */
 				if (prefixInput) prefixInput.setValue('');
@@ -450,9 +521,10 @@ return view.extend({
 
 		/* ══════════════════════════════ sleep ══════════════════════════════ */
 
-		opt(s, 'sleep', form.Flag, 'enable_sleep_function', _('Enable sleep function'));
+		flagOpt(s, 'sleep', 'enable_sleep_function', _('Enable sleep function'));
 		opt(s, 'sleep', form.Value, 'sustained_idle_sleep_thr_s', _('Sustained idle sleep threshold (s)'), { datatype: 'ufloat' });
-		opt(s, 'sleep', form.Flag, 'min_shaper_rates_enforcement', _('Enforce minimum shaper rates'));
+		flagOpt(s, 'sleep', 'min_shaper_rates_enforcement', _('Enforce minimum shaper rates'));
+		flagOpt(s, 'sleep', 'reset_shaper_rates_on_exit', _('Reset CAKE to base rates on stop'));
 		opt(s, 'sleep', form.Value, 'stall_detection_thr', _('Stall detection threshold'), { datatype: 'uinteger' });
 		opt(s, 'sleep', form.Value, 'connection_stall_thr_kbps', _('Connection stall threshold (kbps)'), { datatype: 'uinteger' });
 		opt(s, 'sleep', form.Value, 'global_ping_response_timeout_s', _('Global ping response timeout (s)'), { datatype: 'ufloat' });
@@ -463,17 +535,17 @@ return view.extend({
 
 		/* ══════════════════════════════ logging ══════════════════════════════ */
 
-		opt(s, 'logging', form.Flag, 'output_processing_stats', _('Output processing stats'));
-		opt(s, 'logging', form.Flag, 'output_load_stats', _('Output load stats'));
-		opt(s, 'logging', form.Flag, 'output_reflector_stats', _('Output reflector stats'));
-		opt(s, 'logging', form.Flag, 'output_summary_stats', _('Output summary stats'));
-		opt(s, 'logging', form.Flag, 'output_cake_changes', _('Output CAKE changes'));
-		opt(s, 'logging', form.Flag, 'output_cpu_stats', _('Output CPU stats'));
-		opt(s, 'logging', form.Flag, 'output_cpu_raw_stats', _('Output raw CPU stats'));
-		opt(s, 'logging', form.Flag, 'debug', _('Debug'));
-		opt(s, 'logging', form.Flag, 'log_DEBUG_messages_to_syslog', _('Log DEBUG messages to syslog'));
-		opt(s, 'logging', form.Flag, 'log_to_file', _('Log to file'));
-		opt(s, 'logging', form.Flag, 'log_file_export_compress', _('Compress exported log file'));
+		flagOpt(s, 'logging', 'output_processing_stats', _('Output processing stats'));
+		flagOpt(s, 'logging', 'output_load_stats', _('Output load stats'));
+		flagOpt(s, 'logging', 'output_reflector_stats', _('Output reflector stats'));
+		flagOpt(s, 'logging', 'output_summary_stats', _('Output summary stats'));
+		flagOpt(s, 'logging', 'output_cake_changes', _('Output CAKE changes'));
+		flagOpt(s, 'logging', 'output_cpu_stats', _('Output CPU stats'));
+		flagOpt(s, 'logging', 'output_cpu_raw_stats', _('Output raw CPU stats'));
+		flagOpt(s, 'logging', 'debug', _('Debug'));
+		flagOpt(s, 'logging', 'log_DEBUG_messages_to_syslog', _('Log DEBUG messages to syslog'));
+		flagOpt(s, 'logging', 'log_to_file', _('Log to file'));
+		flagOpt(s, 'logging', 'log_file_export_compress', _('Compress exported log file'));
 
 		opt(s, 'logging', form.Value, 'log_file_max_time_mins', _('Log file max time (mins)'), { datatype: 'uinteger' });
 		opt(s, 'logging', form.Value, 'log_file_max_size_KB', _('Log file max size (KB)'), { datatype: 'uinteger' });
@@ -481,6 +553,29 @@ return view.extend({
 		opt(s, 'logging', form.Value, 'status_file_interval_ms', _('Status file interval (ms)'), { datatype: 'uinteger' });
 		opt(s, 'logging', form.Value, 'log_file_path_override', _('Log file path override'));
 
-		return m.render();
+		/* ── Above the map: backend warning + SQM creation ─────────── */
+		var top = [];
+
+		if (Object.keys(defaults).length === 0)
+			top.push(E('div', { 'class': 'alert-message warning' },
+				E('p', {}, _('The installed cake-autorate backend is older than this web interface: field defaults and help texts are unavailable. Please update the cake-autorate package.'))));
+
+		if (sysinfo.sqm_installed)
+			top.push(E('div', { 'class': 'cbi-section' }, [
+				E('button', {
+					'class': 'btn cbi-button cbi-button-apply',
+					'click': ui.createHandlerFn(this, function() {
+						/* Stage pending form edits first -- the dialog reloads
+						 * the page on success. */
+						return m.save().then(function() {
+							self.showCreateSqm();
+						});
+					})
+				}, _('Create SQM instance…'))
+			]));
+
+		return m.render().then(function(el) {
+			return E([], top.concat([ el ]));
+		});
 	}
 });
