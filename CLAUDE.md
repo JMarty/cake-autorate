@@ -54,8 +54,13 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 - MQTT publisher as a separate service (`mqtt-publisher.init`) configured
   from UCI.
 - rpcd/ubus API (`ubus call cake-autorate <method>`): status, defaults,
-  instance_control, check_config, log_tail, log_export, log_reset,
-  system_info, sqm_create, sqm_sync_rates, mqtt_status.
+  instance_control, service_control, check_config, log_tail, log_export,
+  log_reset, system_info, sqm_create, sqm_sync_rates, mqtt_status.
+  `status` adds `config_errors` (check-config result) for enabled, stopped
+  instances with a non-zero exit code; `log_export` keeps only the newest
+  export per instance in /tmp/cake-autorate-export.
+- SQM base-rate sync (`sqm_sync_base_rates`) is done by the init script when
+  an instance starts (`sync_sqm_rates`), not by the web UI.
 - LuCI pages (Services -> CAKE Autorate): Overview, Instances, Log, MQTT,
   plus a Status-page widget. Rolling charts with zoom, synced hover and
   dynamic scale; instance grid shows defaults.

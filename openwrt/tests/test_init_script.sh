@@ -29,5 +29,33 @@ assert_contains "stderr" "param stderr 1" "${log}"
 : > "${PROCD_LOG}"
 service_triggers
 assert_eq "reload trigger" "trigger cake-autorate" "$(cat "${PROCD_LOG}")"
-rm -rf "${cfg_dir}" "${PROCD_LOG}"
+# --- sync_sqm_rates: uci/logger stubs backed by an associative array ---
+declare -A SQMDB=( [sqm.wan]=queue [sqm.wan.download]=1000 [sqm.wan.upload]=2000 [sqm.other]=queue [sqm.other.download]=1 [sqm.other.upload]=2 )
+SQM_COMMITS=0
+logger() { :; }
+uci() {
+	[ "$1" = "-q" ] && shift
+	case "$1" in
+		get) printf '%s' "${SQMDB[$2]:-}"; [ -n "${SQMDB[$2]:-}" ] ;;
+		set) SQMDB[${2%%=*}]="${2#*=}" ;;
+		commit) SQM_COMMITS=$((SQM_COMMITS + 1)) ;;
+	esac
+}
+export UCI_CONFIG_DIR="${PWD}/fixtures/uci/sqmsync"
+rm -rf "${cfg_dir}"
+cfg_dir=$(mktemp -d)
+CONFIG_PREFIX="${cfg_dir}"
+export CAKE_AUTORATE_CONFIG_PREFIX="${cfg_dir}"
+: > "${PROCD_LOG}"
+start_service
+# wan: base_dl 30000 from the instance, base_ul 20000 falls back to defaults.sh
+assert_eq "sqm download synced" "30000" "${SQMDB[sqm.wan.download]}"
+assert_eq "sqm upload synced (defaults.sh fallback)" "20000" "${SQMDB[sqm.wan.upload]}"
+assert_eq "sqm committed once" "1" "${SQM_COMMITS}"
+assert_eq "no sync flag: download untouched" "1" "${SQMDB[sqm.other.download]}"
+assert_eq "no sync flag: upload untouched" "2" "${SQMDB[sqm.other.upload]}"
+start_service
+assert_eq "equal rates: no second commit" "1" "${SQM_COMMITS}"
+rm -rf "${cfg_dir}"
+rm -rf "${PROCD_LOG}"
 report

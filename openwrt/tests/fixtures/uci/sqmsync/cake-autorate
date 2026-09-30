@@ -1,0 +1,10 @@
+config instance 'wan'
+	option enabled '1'
+	option sqm_instance 'wan'
+	option sqm_sync_base_rates '1'
+	option base_dl_shaper_rate_kbps '30000'
+
+config instance 'nosync'
+	option enabled '1'
+	option sqm_instance 'other'
+	option base_dl_shaper_rate_kbps '50000'

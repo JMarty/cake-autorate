@@ -2,10 +2,10 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cake-autorate
 PKG_VERSION:=3.5.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_LICENSE:=GPL-2.0-only
 PKG_LICENSE_FILES:=LICENCE.md
-PKG_MAINTAINER:=janklovicsmarton
+PKG_MAINTAINER:=janklovicsmarton <janklovicsmarton@users.noreply.github.com>
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -17,7 +17,7 @@ define Package/cake-autorate
   CATEGORY:=Network
   SUBMENU:=Traffic Shaping
   TITLE:=Adaptive CAKE bandwidth controller
-  URL:=https://github.com/lynxthecat/cake-autorate
+  URL:=https://github.com/JMarty/cake-autorate
   DEPENDS:=+bash +fping +sqm-scripts +jsonfilter
   PKGARCH:=all
 endef
@@ -32,8 +32,15 @@ define Package/cake-autorate/conffiles
 /etc/config/cake-autorate
 endef
 
+define Package/cake-autorate/postrm
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] || /etc/init.d/rpcd reload 2>/dev/null
+exit 0
+endef
+
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) $(SRC_ROOT)/LICENCE.md $(PKG_BUILD_DIR)/
 endef
 
 define Build/Configure

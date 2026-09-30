@@ -28,7 +28,7 @@ valid_number() {
 
 json_str() {
 	# JSON-escape backslash and double quote, drop control characters (for hand-built JSON)
-	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t'
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'
 }
 
 log_path_for() {
@@ -52,11 +52,27 @@ cake_info() {
 	printf '1 %d' $((bw * 8 / 1000))
 }
 
+# check_instance_config <id>: render the UCI instance to a temp file and run --check-config on it.
+# Sets CC_RC and CC_ERRS (newline-separated ERROR messages). Returns 1 if rendering failed (CC_OUT holds the message).
+check_instance_config() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local tmp
+	tmp=$(mktemp)
+	if ! CC_OUT=$("$SCRIPT_PREFIX/uci-to-config.sh" "$1" "$tmp" 2>&1); then
+		rm -f "$tmp"
+		return 1
+	fi
+	CC_OUT=$(CAKE_AUTORATE_SCRIPT_PREFIX="$SCRIPT_PREFIX" CAKE_AUTORATE_CONFIG_PREFIX=/var/etc/cake-autorate \
+		"$SCRIPT_PREFIX/cake-autorate.sh" --check-config "$tmp" 2>&1); CC_RC=$?
+	rm -f "$tmp"
+	CC_ERRS=$(printf '%s\n' "$CC_OUT" | sed -n 's/^ERROR; [^;]*; [^;]*; //p')
+}
+
 # ---- status ---------------------------------------------------------------
 
 status_instance() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id="$1" enabled running pid exit_code sfile spid stale=0 dl_if ul_if sjson
+	local id="$1" enabled running pid exit_code sfile spid stale=0 dl_if ul_if sjson first line
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local dl_present dl_bw ul_present ul_bw
 	config_get_bool enabled "$id" enabled 0
@@ -80,9 +96,31 @@ status_instance() {
 		"$([ "$enabled" -eq 1 ] && echo true || echo false)" "$running" "$pid" "$exit_code"
 	SEP=","
 
+	# Why did an enabled instance stop? Only then run the (subprocess) config check.
+	printf ',"config_errors":['
+	if [ "$enabled" -eq 1 ] && [ "$running" = false ] && [ "$exit_code" -ne 0 ] && check_instance_config "$id"; then
+		first=1
+		IFS='
+'
+		for line in $CC_ERRS; do
+			[ "$first" -eq 1 ] || printf ','
+			first=0
+			printf '"%s"' "$(json_str "$line")"
+		done
+		unset IFS
+	fi
+	printf ']'
+
 	sfile="$RUN_DIR/$id/status.json"
 	if [ -r "$sfile" ]; then
+		# status.json is rewritten in place, so a read can catch it empty or truncated:
+		# retry once, and never embed anything that does not parse.
 		sjson=$(cat "$sfile" 2>/dev/null)
+		if [ -z "$sjson" ] || ! printf '%s' "$sjson" | jsonfilter -q -e '@.pid' >/dev/null; then
+			sleep 0.1 2>/dev/null
+			sjson=$(cat "$sfile" 2>/dev/null)
+			printf '%s' "$sjson" | jsonfilter -q -e '@.pid' >/dev/null || sjson=null
+		fi
 		[ -n "$sjson" ] || sjson=null
 		if [ "$sjson" != null ]; then
 			spid=$(printf '%s' "$sjson" | jsonfilter -q -e '@.pid')
@@ -127,6 +165,20 @@ do_status() {
 
 # ---- control / config -----------------------------------------------------
 
+do_service_control() {
+	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local service action
+	json_load "$INPUT"
+	json_get_var service service
+	json_get_var action action
+	case "$service" in cake-autorate|mqtt-publisher) ;; *) reply_error "invalid service" ;; esac
+	case "$action" in start|stop|restart|reload) ;; *) reply_error "invalid action" ;; esac
+	"/etc/init.d/$service" "$action" >/dev/null 2>&1
+	json_init
+	json_add_boolean ok 1
+	json_dump
+}
+
 do_instance_control() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
 	local id action enabled
@@ -156,27 +208,19 @@ do_instance_control() {
 
 do_check_config() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id tmp out rc line errs
+	local id line
 	json_load "$INPUT"
 	json_get_var id id
 	valid_id "$id" || reply_error "invalid instance id"
-	tmp=$(mktemp)
-	if ! out=$("$SCRIPT_PREFIX/uci-to-config.sh" "$id" "$tmp" 2>&1); then
-		rm -f "$tmp"
-		reply_error "$out"
-	fi
-	out=$(CAKE_AUTORATE_SCRIPT_PREFIX="$SCRIPT_PREFIX" CAKE_AUTORATE_CONFIG_PREFIX=/var/etc/cake-autorate \
-		"$SCRIPT_PREFIX/cake-autorate.sh" --check-config "$tmp" 2>&1); rc=$?
-	rm -f "$tmp"
+	check_instance_config "$id" || reply_error "$CC_OUT"
 	json_init
 	json_add_boolean ok 1
-	json_add_boolean valid "$([ $rc -eq 0 ] && echo 1 || echo 0)"
+	json_add_boolean valid "$([ "$CC_RC" -eq 0 ] && echo 1 || echo 0)"
 	# no pipe into the loop: a piped `while` runs in a subshell in ash and would lose the json_add_string calls
-	errs=$(printf '%s\n' "$out" | sed -n 's/^ERROR; [^;]*; [^;]*; //p')
 	json_add_array errors
 	IFS='
 '
-	for line in $errs; do json_add_string "" "$line"; done
+	for line in $CC_ERRS; do json_add_string "" "$line"; done
 	unset IFS
 	json_close_array
 	json_dump
@@ -218,18 +262,24 @@ do_log_tail() {
 
 do_log_export() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id helper out path
+	local id helper out path dest
 	json_load "$INPUT"
 	json_get_var id id
 	valid_id "$id" || reply_error "invalid instance id"
 	helper="$RUN_DIR/$id/log_file_export"
 	[ -x "$helper" ] || reply_error "instance '$id' is not running with log_to_file=1"
-	out=$("$helper" 30 2>&1) || reply_error "$out"
+	out=$("$helper" 20 2>&1) || reply_error "$out"
 	path=$(printf '%s\n' "$out" | sed -n 's/^Log file available at location: //p')
 	[ -n "$path" ] || reply_error "export did not report a file: $out"
+	# keep only the newest export per instance
+	mkdir -p /tmp/cake-autorate-export
+	case "$path" in *.gz) dest="/tmp/cake-autorate-export/$id.log.gz" ;; *) dest="/tmp/cake-autorate-export/$id.log" ;; esac
+	rm -f "/tmp/cake-autorate-export/$id.log" "/tmp/cake-autorate-export/$id.log.gz"
+	mv -f "$path" "$dest" || reply_error "could not move export to $dest"
 	json_init
 	json_add_boolean ok 1
-	json_add_string path "$path"
+	json_add_string path "$dest"
+	json_add_int size "$(wc -c < "$dest")"
 	json_dump
 }
 
@@ -266,7 +316,7 @@ sqm_entry() {
 	json_add_boolean enabled "$enabled"
 	json_add_int download "${download:-0}"
 	json_add_int upload "${upload:-0}"
-	json_add_string ifb "ifb4$iface"
+	json_add_string ifb "$(printf 'ifb4%s' "$iface" | cut -c1-15)"
 	json_close_object
 }
 
@@ -413,6 +463,7 @@ case "$1" in
 		  "status": {},
 		  "defaults": {},
 		  "instance_control": { "id": "str", "action": "str" },
+		  "service_control": { "service": "str", "action": "str" },
 		  "check_config": { "id": "str" },
 		  "log_tail": { "id": "str", "lines": 0 },
 		  "log_export": { "id": "str" },
@@ -430,6 +481,7 @@ case "$1" in
 			status)           do_status ;;
 			defaults)         do_defaults ;;
 			instance_control) do_instance_control ;;
+			service_control)  do_service_control ;;
 			check_config)     do_check_config ;;
 			log_tail)         do_log_tail ;;
 			log_export)       do_log_export ;;

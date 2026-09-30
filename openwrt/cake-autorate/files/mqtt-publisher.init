@@ -49,8 +49,10 @@ start_service() {
 	procd_close_instance
 }
 
+# procd only restarts the publisher when the generated config file changed.
 reload_service() {
-	restart
+	# rc_procd provides the procd service context that start_service needs.
+	rc_procd start_service
 }
 
 service_triggers() {
