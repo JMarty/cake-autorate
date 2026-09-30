@@ -130,12 +130,6 @@ After installing `luci-app-cake-autorate`, the pages are under
 The web interface is in English only for now; translations are not
 provided yet — contributions (`po/` files) are welcome.
 
-### Screenshots
-
-![Overview page with live charts](images/luci-overview.png)
-
-![Instances page](images/luci-instances.png)
-
 ### Versioning & stability
 
 Releases of this fork are tagged `v<upstream version>-owrt<N>`, e.g.

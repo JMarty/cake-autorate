@@ -24,35 +24,19 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
    docs/superpowers/ and .superpowers/ which are gitignored (local only).
 
 ## Current status (update me)
-- Released: v3.5.0-owrt3 (backend 3.5.0-r2, LuCI 1.0.0-r1).
-- Pre-release hardening (plan: docs/superpowers/plans/2026-09-30-pre-release-hardening.md)
-  Tasks 1-9 done on branch `pre-release-hardening` (code, tests, CI, docs);
-  CHANGELOG lists it as "v3.5.0-owrt4 (unreleased)". Final whole-branch
-  review fix wave done (check-config log side effect, export dir hardening,
-  strict SQM rate sync, r2-backend warning, CI release job, docs).
-  Parked review items also fixed: interface clash check ignores disabled
-  instances, unused check_config ACL grant / api.checkConfig removed
-  (rpcd method kept for CLI), overview version label is a text node.
-  SQM feature done: Part A (backend: status.sqm, sqm_control, manage_sqm)
-  and Part B (LuCI SQM tab + Enable/Disable SQM now, Overview SQM line,
-  no_cake state, sqm_control ACL grant, README/INSTALLATION/CHANGELOG).
-  LuCI part verified only with a mock harness (no LuCI runtime): check the
-  SQM tab / buttons / Overview SQM line on the router in Task 10.
-- Next (Task 10, with the user): on-router checks — incl. a crashed
-  instance with log_to_file=1 does not grow /var/log/cake-autorate.log
-  (rpcd --check-config polling); `log_export` refuses a pre-made symlinked
-  /tmp/cake-autorate-export; LuCI 1.1.0 on an r2 (owrt3) backend shows the
-  "backend is older" warning — then add screenshots
-  images/luci-overview.png + images/luci-instances.png (referenced by README),
-  enable GitHub Issues and private vulnerability reporting (docs link to
-  both; currently disabled), merge, tag v3.5.0-owrt4 (backend 3.5.0-r3,
-  LuCI 1.1.0-r1), write release notes, drop "(unreleased)" in CHANGELOG.
-- Verified on a real router: OpenWrt 25.12 (apk), 5G WAN, single instance.
-  owrt4 candidate (branch build, 2026-09-30) installed over owrt3 and tested
-  by the user: Overview (charts, SQM line), Instances (editable fields,
-  min>max rejected, tri-state flags, SQM tab), Log, MQTT, Stop/Start, Status
-  widget, manage_sqm on — all OK. Remaining before tagging: screenshots,
-  GitHub Issues + private vulnerability reporting, merge + tag.
+- Released: v3.5.0-owrt4 (2026-09-30; backend 3.5.0-r3, LuCI 1.1.0-r1):
+  pre-release hardening (four-reviewer audit fixed: editable fields,
+  tri-state flags, validation, narrow ACL, fork-free status writer, reset
+  to base rates on stop, CI checksums, public docs) + SQM awareness and
+  optional SQM management (manage_sqm). Verified on a real router
+  (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging.
+- Next: README screenshots (the user will send new Overview + Instances
+  screenshots taken on owrt4; add them as images/luci-*.png and a
+  "Screenshots" subsection in the README fork section).
+- Not yet exercised on a device: crashed instance with log_to_file=1 does
+  not grow /var/log/cake-autorate.log; `log_export` refuses a pre-made
+  symlinked /tmp/cake-autorate-export; LuCI 1.1.0 on an r2 backend shows the
+  "backend is older" warning (all covered by offline tests/review only).
 
 ## Features
 - Native OpenWrt packages: `cake-autorate` (backend) and
@@ -173,7 +157,7 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
 | openwrt/tests/ | Offline tests (run-tests.sh, test_*.sh, fixtures/, shim/); router/smoke.sh runs on a device |
 | .github/workflows/openwrt-packages.yml | CI: lint, tests, SDK builds, release |
 | .github/ISSUE_TEMPLATE/ | Bug report form (versions, ubus status, logread) + contact links (upstream forum, security advisory) |
-| README.md | Fork section: features, LuCI pages, screenshots, versioning table, reporting, security note; rest is upstream text |
+| README.md | Fork section: features, LuCI pages, versioning table, reporting, security note (screenshots pending); rest is upstream text |
 | INSTALLATION.md | Package install/configure/verify/migrate/upgrade/uninstall/rollback/troubleshooting/trust first; upstream setup.sh sections labelled "(setup.sh installs only)" |
 | CHANGELOG.md | "OpenWrt package / LuCI app (fork)" section on top (per owrt release), upstream history below |
 | CONTRIBUTING.md, SECURITY.md | Dev checks, coding rules, commit style; private vulnerability reporting + by-design security notes |
