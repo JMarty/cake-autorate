@@ -22,6 +22,10 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
    fork delta against upstream.
 4. The user works with the superpowers plugin; its plans/specs live in
    docs/superpowers/ and .superpowers/ which are gitignored (local only).
+5. Transparency (user's explicit wish): the fork is fully vibe-coded with
+   Claude Code. Keep the README section "How this fork was made: fully
+   vibe-coded" accurate (especially the list of tested vs. untested setups)
+   and state it in every release note and public announcement.
 
 ## Current status (update me)
 - Released: v3.5.0-owrt4 (2026-09-30; backend 3.5.0-r3, LuCI 1.1.0-r1):

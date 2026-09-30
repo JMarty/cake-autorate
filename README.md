@@ -23,6 +23,38 @@ upstream algorithm is untouched here — this fork wraps it in native
 OpenWrt integration: it installs as a package and can be managed
 entirely from the LuCI web interface.
 
+### How this fork was made: fully vibe-coded
+
+Full disclosure: everything this fork adds — the OpenWrt packaging,
+the rpcd/ubus backend, the LuCI web interface, the tests, the CI and
+this documentation — is **fully vibe-coded**. It was written by an AI
+coding assistant (Anthropic's Claude, via Claude Code) under my
+direction; I did not write the code by hand, and I am not a
+professional OpenWrt or LuCI developer.
+
+What was done to keep it trustworthy:
+
+- The rate-control algorithm itself is upstream's and unchanged. The
+  few integration hooks added to the core scripts are marked with a
+  `# fork:` comment.
+- Before release, the whole fork went through several independent
+  AI code reviews (correctness, security of the root-run backend,
+  LuCI behaviour, documentation); every finding was fixed or
+  documented.
+- An offline test suite, shellcheck and JavaScript syntax checks run
+  in CI on every push.
+- I run it every day on my own router and tested every page of the
+  web interface by hand before the release.
+
+What that does **not** cover: I have tested it on one setup only —
+OpenWrt 25.12 (`apk`), a 5G WAN, a single instance, `fping`. The
+OpenWrt 24.10 (`.ipk`) packages are built but not tested by me, and
+multi-WAN/mwan3 setups, other pingers and other hardware are
+untested. Please keep that in mind and
+[report problems](#reporting-problems) — feedback from other setups is
+very welcome. The instructions the AI works from are public in
+[CLAUDE.md](./CLAUDE.md).
+
 On OpenWrt, install from the [Releases](../../releases) page — see
 [INSTALLATION](./INSTALLATION.md#installation-as-an-openwrt-package-recommended-on-openwrt).
 Asus Merlin and Debian users: this fork does not change the upstream
