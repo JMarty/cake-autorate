@@ -31,9 +31,11 @@ assert_contains "stderr" "param stderr 1" "${log}"
 service_triggers
 assert_eq "reload trigger" "trigger cake-autorate" "$(cat "${PROCD_LOG}")"
 # --- sync_sqm_rates: uci/logger stubs backed by an associative array ---
-declare -A SQMDB=( [sqm.wan]=queue [sqm.wan.download]=1000 [sqm.wan.upload]=2000 [sqm.other]=queue [sqm.other.download]=1 [sqm.other.upload]=2 )
+declare -A SQMDB=( [sqm.wan]=queue [sqm.wan.download]=1000 [sqm.wan.upload]=2000 [sqm.other]=queue [sqm.other.download]=1 [sqm.other.upload]=2 [sqm.bad]=queue [sqm.bad.download]=5 [sqm.bad.upload]=6 )
 SQM_COMMITS=0
-logger() { :; }
+SQM_LOG=""
+logger() { SQM_LOG="${SQM_LOG}${*}
+"; }
 uci() {
 	[ "$1" = "-q" ] && shift
 	case "$1" in
@@ -56,6 +58,10 @@ assert_eq "sqm upload synced (defaults.sh fallback)" "20000" "${SQMDB[sqm.wan.up
 assert_eq "sqm committed once" "1" "${SQM_COMMITS}"
 assert_eq "no sync flag: download untouched" "1" "${SQMDB[sqm.other.download]}"
 assert_eq "no sync flag: upload untouched" "2" "${SQMDB[sqm.other.upload]}"
+# badrate: explicit non-integer base_dl -> no defaults.sh fallback, queue untouched
+assert_eq "non-integer base rate: download untouched" "5" "${SQMDB[sqm.bad.download]}"
+assert_eq "non-integer base rate: upload untouched" "6" "${SQMDB[sqm.bad.upload]}"
+assert_contains "non-integer base rate: logged" "base_dl_shaper_rate_kbps '30000.5' is not a whole number" "${SQM_LOG}"
 start_service
 assert_eq "equal rates: no second commit" "1" "${SQM_COMMITS}"
 rm -rf "${cfg_dir}"

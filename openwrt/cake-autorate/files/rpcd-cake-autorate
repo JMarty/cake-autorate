@@ -262,19 +262,29 @@ do_log_tail() {
 
 do_log_export() {
 	# shellcheck disable=SC3043  # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
-	local id helper out path dest
+	local id helper out path dest d
 	json_load "$INPUT"
 	json_get_var id id
 	valid_id "$id" || reply_error "invalid instance id"
 	helper="$RUN_DIR/$id/log_file_export"
 	[ -x "$helper" ] || reply_error "instance '$id' is not running with log_to_file=1"
+	# /tmp is world-writable: refuse an export dir someone else prepared (symlink,
+	# foreign owner) before moving root-read log data into it.
+	d=/tmp/cake-autorate-export
+	[ -L "$d" ] && reply_error "refusing symlinked $d"
+	# (plain mkdir, not -p: /tmp exists; "already exists" is fine, the checks below decide)
+	mkdir -m 700 "$d" 2>/dev/null
+	{ [ -d "$d" ] && [ ! -L "$d" ]; } || reply_error "$d is not a plain directory"
+	chmod 700 "$d" || reply_error "could not chmod $d"
+	# busybox test has no -O: check the owner via ls -ld field 3
+	# shellcheck disable=SC2012 # fixed path, only the owner column is read
+	[ "$(ls -ld "$d" | awk '{print $3}')" = "root" ] || reply_error "refusing $d: not owned by root"
 	out=$("$helper" 20 2>&1) || reply_error "$out"
 	path=$(printf '%s\n' "$out" | sed -n 's/^Log file available at location: //p')
 	[ -n "$path" ] || reply_error "export did not report a file: $out"
 	# keep only the newest export per instance
-	mkdir -p /tmp/cake-autorate-export
-	case "$path" in *.gz) dest="/tmp/cake-autorate-export/$id.log.gz" ;; *) dest="/tmp/cake-autorate-export/$id.log" ;; esac
-	rm -f "/tmp/cake-autorate-export/$id.log" "/tmp/cake-autorate-export/$id.log.gz"
+	case "$path" in *.gz) dest="$d/$id.log.gz" ;; *) dest="$d/$id.log" ;; esac
+	rm -f "$d/$id.log" "$d/$id.log.gz"
 	mv -f "$path" "$dest" || reply_error "could not move export to $dest"
 	json_init
 	json_add_boolean ok 1

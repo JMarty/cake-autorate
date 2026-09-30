@@ -11,6 +11,21 @@ SCRIPT_PREFIX="${CAKE_AUTORATE_SCRIPT_PREFIX:-/usr/lib/cake-autorate}"
 CONFIG_PREFIX="${CAKE_AUTORATE_CONFIG_PREFIX:-/var/etc/cake-autorate}"
 UCI_TO_CONFIG="${CAKE_AUTORATE_UCI_TO_CONFIG:-${SCRIPT_PREFIX}/uci-to-config.sh}"
 
+# base_rate dl|ul <rendered config>: the last base rate line (instance options are
+# emitted after global ones, so they win), unquoted; defaults.sh only when the
+# rendered config has no such line at all.
+base_rate() {
+	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
+	local key="base_$1_shaper_rate_kbps" v
+	if grep -q "^$key=" "$2"; then
+		v=$(sed -n "s/^$key=//p" "$2" | tail -n 1)
+		v=${v#\"}; v=${v%\"}
+	else
+		v=$(sed -n "s/^$key=\([0-9]*\).*/\1/p" "$SCRIPT_PREFIX/defaults.sh")
+	fi
+	printf '%s' "$v"
+}
+
 # sqm_sync_base_rates: keep the linked SQM queue at this instance's base rates.
 sync_sqm_rates() {
 	# shellcheck disable=SC3043 # 'local' is a busybox ash/dash builtin; OpenWrt's own functions.sh relies on it.
@@ -19,10 +34,10 @@ sync_sqm_rates() {
 	config_get sqm "$id" sqm_instance
 	[ "$sync" -eq 1 ] && [ -n "$sqm" ] || return 0
 	[ "$(uci -q get "sqm.$sqm")" = "queue" ] || return 0
-	dl=$(sed -n 's/^base_dl_shaper_rate_kbps="\([0-9]*\)"$/\1/p' "$cfg")
-	ul=$(sed -n 's/^base_ul_shaper_rate_kbps="\([0-9]*\)"$/\1/p' "$cfg")
-	[ -n "$dl" ] || dl=$(sed -n 's/^base_dl_shaper_rate_kbps=\([0-9]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
-	[ -n "$ul" ] || ul=$(sed -n 's/^base_ul_shaper_rate_kbps=\([0-9]*\).*/\1/p' "$SCRIPT_PREFIX/defaults.sh")
+	dl=$(base_rate dl "$cfg"); ul=$(base_rate ul "$cfg")
+	# never fall back to defaults.sh over an explicit non-integer value, never set an empty rate
+	case "$dl" in ''|*[!0-9]*) logger -t cake-autorate "instance '$id': base_dl_shaper_rate_kbps '$dl' is not a whole number, SQM queue '$sqm' left unchanged"; return 0 ;; *) ;; esac
+	case "$ul" in ''|*[!0-9]*) logger -t cake-autorate "instance '$id': base_ul_shaper_rate_kbps '$ul' is not a whole number, SQM queue '$sqm' left unchanged"; return 0 ;; *) ;; esac
 	cur_dl=$(uci -q get "sqm.$sqm.download"); cur_ul=$(uci -q get "sqm.$sqm.upload")
 	[ "$cur_dl" = "$dl" ] && [ "$cur_ul" = "$ul" ] && return 0
 	uci -q set "sqm.$sqm.download=$dl"; uci -q set "sqm.$sqm.upload=$ul"; uci -q commit sqm
