@@ -48,6 +48,11 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   both; currently disabled), merge, tag v3.5.0-owrt4 (backend 3.5.0-r3,
   LuCI 1.1.0-r1), write release notes, drop "(unreleased)" in CHANGELOG.
 - Verified on a real router: OpenWrt 25.12 (apk), 5G WAN, single instance.
+  owrt4 candidate (branch build, 2026-09-30) installed over owrt3 and tested
+  by the user: Overview (charts, SQM line), Instances (editable fields,
+  min>max rejected, tri-state flags, SQM tab), Log, MQTT, Stop/Start, Status
+  widget, manage_sqm on — all OK. Remaining before tagging: screenshots,
+  GitHub Issues + private vulnerability reporting, merge + tag.
 
 ## Features
 - Native OpenWrt packages: `cake-autorate` (backend) and
