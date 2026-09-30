@@ -1187,6 +1187,7 @@ case ${pinger_method} in
 		;;
 esac
 
+# fork: keep in sync with check_config_relations (lib.sh), which repeats these checks for --check-config
 (( no_pingers < 1 )) && { log_msg "ERROR" "number of pingers must be at least 1. Exiting script."; exit 1; }
 (( no_pingers > no_reflectors )) && { log_msg "ERROR" "number of pingers cannot be greater than number of reflectors. Exiting script."; exit 1; }
 

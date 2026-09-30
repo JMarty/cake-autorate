@@ -58,5 +58,9 @@ assert_eq "unset load -> idle" "idle" "$(jq -r .dl.load "${f}")"
 
 write_status_file_waiting
 assert_eq "waiting state" "waiting_for_if" "$(jq -r .state "${f}")"
+jq -e '.updated_us > 0' "${f}" >/dev/null && pass "waiting updated_us" || fail "waiting updated_us" "$(cat "${f}")"
+instance_id=$'a\rb'
+write_status_file_waiting
+assert_eq "CR escaped" "$(printf 'a\rb')" "$(jq -r .instance "${f}")"
 rm -rf "${run_path}"
 report

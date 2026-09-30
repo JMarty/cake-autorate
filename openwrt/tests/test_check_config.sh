@@ -32,4 +32,18 @@ out=$(bash "${S}" --check-config "${F}/does-not-exist.sh" 2>&1); rc=$?
 assert_eq "missing file: exit 1" 1 "${rc}"
 assert_contains "missing file: message" "No config file found" "${out}"
 assert_not_contains "no stray stderr" "No such file or directory" "${out}"
+# Drift guard: every startup relation message in cake-autorate.sh must also be
+# reported by check_config_relations in lib.sh (used by --check-config).
+n=0
+while IFS= read -r msg
+do
+	n=$((n+1))
+	msg=${msg%"${msg##*[![:space:]]}"}
+	if grep -qF -- "log_msg \"ERROR\" \"${msg}" "${REPO_ROOT}/lib.sh"
+	then pass "relation in lib.sh: ${msg}"
+	else fail "relation missing in lib.sh: ${msg}"
+	fi
+done < <(sed -n '/keep in sync with check_config_relations/,/Passed error checks/p' "${S}" \
+	| sed -n 's/.*log_msg "ERROR" "\(.*\) Exiting script\.".*/\1/p')
+[ "${n}" -ge 10 ] && pass "extracted ${n} startup relations" || fail "extracted startup relations" "${n}"
 report
