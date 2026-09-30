@@ -119,7 +119,9 @@ function ratesValidate(dir, ownKey) {
 		if (isNaN(lo) || isNaN(mid) || isNaN(hi)) return true;
 		if (lo < 1) return _('Minimum rate must be at least 1 kbit/s');
 		if (!(lo <= mid && mid <= hi)) return _('Rates must satisfy min ≤ base ≤ max');
-		if (!isNaN(act) && act > lo) return _('Must not be below the connection active threshold (%d kbit/s)').format(act);
+		/* Threshold vs. min is reported on the min field only (base/max are
+		 * not the field to fix); connection_active_thr_kbps checks it too. */
+		if (ownKey === 'min_' + dir + '_shaper_rate_kbps' && !isNaN(act) && act > lo) return _('Must not be below the connection active threshold (%d kbit/s)').format(act);
 		return true;
 	};
 }

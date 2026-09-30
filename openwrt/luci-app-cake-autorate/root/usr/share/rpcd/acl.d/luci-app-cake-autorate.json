@@ -6,6 +6,7 @@
 			"ubus": {
 				"cake-autorate": [ "status", "defaults", "check_config", "log_tail", "system_info", "mqtt_status" ]
 			},
+			"cgi-io": [ "download" ],
 			"file": {
 				"/tmp/cake-autorate-export/*": [ "read" ]
 			}

@@ -131,7 +131,8 @@ return view.extend({
 				document.body.appendChild(link);
 				link.click();
 				document.body.removeChild(link);
-				URL.revokeObjectURL(url);
+				/* Revoke after the click has been dispatched to the download. */
+				setTimeout(function() { URL.revokeObjectURL(url); }, 0);
 			}).catch(function(err) {
 				ui.addNotification(null, E('p', {}, _('Export succeeded on the router (%s) but the download failed: %s').format(res.path, String((err && err.message) || err))), 'error');
 			});

@@ -37,14 +37,17 @@ return baseclass.extend({
 	},
 
 	/* Short chart-axis label: >= 10 in the chosen unit -> no decimals,
-	 * below that one decimal with a trailing ".0" trimmed. */
+	 * below that one decimal with a trailing ".0" trimmed. The unit is
+	 * promoted after rounding (999999 -> "1 Gbit/s", not "1000 Mbit/s"). */
 	fmtKbpsAxis: function(kbps) {
 		if (kbps == null || isNaN(kbps)) return '';
-		var v = Number(kbps), unit = _('kbit/s');
-		if (Math.abs(v) >= 1000000) { v = v / 1000000; unit = _('Gbit/s'); }
-		else if (Math.abs(v) >= 1000) { v = v / 1000; unit = _('Mbit/s'); }
-		var txt = (Math.abs(v) >= 10) ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
-		return '%s %s'.format(txt, unit);
+		var units = [ _('kbit/s'), _('Mbit/s'), _('Gbit/s') ];
+		var v = Number(kbps), i = 0, r;
+		function round(x) { return (Math.abs(x) >= 10) ? Math.round(x) : Math.round(x * 10) / 10; }
+		while (i < units.length - 1 && Math.abs(r = round(v)) >= 1000) { v = v / 1000; i++; }
+		r = round(v);
+		var txt = (Math.abs(r) >= 10) ? String(r) : r.toFixed(1).replace(/\.0$/, '');
+		return '%s %s'.format(txt, units[i]);
 	},
 
 	fmtUptime: function(s) {

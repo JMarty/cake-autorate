@@ -77,8 +77,11 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
   no `defaults` metadata.
 - LuCI talks only to the `cake-autorate` ubus object (service start/stop via
   `service_control`, log download via cgi-download from
-  /tmp/cake-autorate-export); the ACL grants no `luci`/`file`/`service` ubus
-  objects and no `sqm`/`mwan3` UCI access.
+  /tmp/cake-autorate-export); cgi-download needs both the `cgi-io`
+  `download` grant and the `file` read grant on
+  `/tmp/cake-autorate-export/*` (cgi-io checks the former first). The ACL
+  grants no `luci`/`file`/`service` ubus objects and no `sqm`/`mwan3` UCI
+  access.
 - CI: shellcheck, offline test suite, OpenWrt SDK package builds, releases
   from tags.
 
