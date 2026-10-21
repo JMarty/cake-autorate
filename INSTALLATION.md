@@ -52,9 +52,9 @@ replace the tag and the file names accordingly.
 ```sh
 apk update
 cd /tmp
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate-3.5.0-r4.apk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate-3.5.0-r5.apk
 wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/luci-app-cake-autorate-1.1.0-r1.apk
-apk add --allow-untrusted ./cake-autorate-3.5.0-r4.apk
+apk add --allow-untrusted ./cake-autorate-3.5.0-r5.apk
 apk add --allow-untrusted ./luci-app-cake-autorate-1.1.0-r1.apk
 service rpcd reload
 ```
@@ -64,9 +64,9 @@ service rpcd reload
 ```sh
 opkg update
 cd /tmp
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate_3.5.0-r4_all.ipk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate_3.5.0-r5_all.ipk
 wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/luci-app-cake-autorate_1.1.0-r1_all.ipk
-opkg install ./cake-autorate_3.5.0-r4_all.ipk
+opkg install ./cake-autorate_3.5.0-r5_all.ipk
 opkg install ./luci-app-cake-autorate_1.1.0-r1_all.ipk
 service rpcd reload
 ```
@@ -275,7 +275,7 @@ and run:
 ```sh
 cd /tmp
 wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/SHA256SUMS
-grep -F -e cake-autorate-3.5.0-r4.apk -e luci-app-cake-autorate-1.1.0-r1.apk SHA256SUMS > sums.txt
+grep -F -e cake-autorate-3.5.0-r5.apk -e luci-app-cake-autorate-1.1.0-r1.apk SHA256SUMS > sums.txt
 sha256sum -c sums.txt
 ```
 

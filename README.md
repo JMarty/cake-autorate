@@ -191,7 +191,7 @@ packaging release. The two packages have their own version numbers:
 | v3.5.0-owrt2   | 3.5.0-r1        | —                        |
 | v3.5.0-owrt3   | 3.5.0-r2        | 1.0.0-r1                 |
 | v3.5.0-owrt4   | 3.5.0-r3        | 1.1.0-r1                 |
-| v3.5.0-owrt5   | 3.5.0-r4        | 1.1.0-r1                 |
+| v3.5.0-owrt5   | 3.5.0-r5        | 1.1.0-r1                 |
 
 Only the files on the [Releases](../../releases) page are tested
 releases. The `master` branch of this fork may be ahead of the latest
