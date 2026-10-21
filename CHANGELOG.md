@@ -12,7 +12,7 @@ package the upstream script for OpenWrt. They are tagged
 `v<upstream version>-owrt<N>`; the upstream algorithm is unchanged.
 The upstream history continues further below.
 
-### Unreleased
+### v3.5.0-owrt5 (2026-10-21) — cake-autorate 3.5.0-r5, luci-app-cake-autorate 1.1.0-r1
 
 Service (`cake-autorate`):
 
@@ -20,6 +20,11 @@ Service (`cake-autorate`):
   it still waits for the ifb interface to come up), or a config error at
   startup, no longer aborts the cleanup with `DL: unbound variable`; the
   instance now exits cleanly and logs its stop line (#1).
+- Stopping an instance no longer leaves processes behind. The cleanup
+  waited a full second on each helper process that had already exited,
+  about 4 s in total, so procd's 5 s stop timeout could kill the
+  instance mid-cleanup. Cleanup now takes about 1 s, and procd waits up
+  to 15 s (`term_timeout`) before forcing the stop (#3).
 
 ### v3.5.0-owrt4 (2026-09-30) — cake-autorate 3.5.0-r3, luci-app-cake-autorate 1.1.0-r1
 

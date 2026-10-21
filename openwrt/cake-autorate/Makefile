@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=cake-autorate
 PKG_VERSION:=3.5.0
-PKG_RELEASE:=3
+PKG_RELEASE:=5
 PKG_LICENSE:=GPL-2.0-only
 PKG_LICENSE_FILES:=LICENCE.md
 PKG_MAINTAINER:=janklovicsmarton <janklovicsmarton@users.noreply.github.com>

@@ -44,7 +44,7 @@ are installed automatically from the OpenWrt package feeds.
 The file names contain the version, so there is no fixed "latest"
 download link. Open the [Releases page](https://github.com/JMarty/cake-autorate/releases),
 pick the newest release and use its file names. The commands below
-use the names of release **v3.5.0-owrt4**; for a newer release,
+use the names of release **v3.5.0-owrt5**; for a newer release,
 replace the tag and the file names accordingly.
 
 **OpenWrt 25.12 or newer (apk):**
@@ -52,9 +52,9 @@ replace the tag and the file names accordingly.
 ```sh
 apk update
 cd /tmp
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/cake-autorate-3.5.0-r3.apk
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/luci-app-cake-autorate-1.1.0-r1.apk
-apk add --allow-untrusted ./cake-autorate-3.5.0-r3.apk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate-3.5.0-r5.apk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/luci-app-cake-autorate-1.1.0-r1.apk
+apk add --allow-untrusted ./cake-autorate-3.5.0-r5.apk
 apk add --allow-untrusted ./luci-app-cake-autorate-1.1.0-r1.apk
 service rpcd reload
 ```
@@ -64,9 +64,9 @@ service rpcd reload
 ```sh
 opkg update
 cd /tmp
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/cake-autorate_3.5.0-r3_all.ipk
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/luci-app-cake-autorate_1.1.0-r1_all.ipk
-opkg install ./cake-autorate_3.5.0-r3_all.ipk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/cake-autorate_3.5.0-r5_all.ipk
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/luci-app-cake-autorate_1.1.0-r1_all.ipk
+opkg install ./cake-autorate_3.5.0-r5_all.ipk
 opkg install ./luci-app-cake-autorate_1.1.0-r1_all.ipk
 service rpcd reload
 ```
@@ -274,8 +274,8 @@ and run:
 
 ```sh
 cd /tmp
-wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt4/SHA256SUMS
-grep -F -e cake-autorate-3.5.0-r3.apk -e luci-app-cake-autorate-1.1.0-r1.apk SHA256SUMS > sums.txt
+wget https://github.com/JMarty/cake-autorate/releases/download/v3.5.0-owrt5/SHA256SUMS
+grep -F -e cake-autorate-3.5.0-r5.apk -e luci-app-cake-autorate-1.1.0-r1.apk SHA256SUMS > sums.txt
 sha256sum -c sums.txt
 ```
 

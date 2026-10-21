@@ -28,13 +28,21 @@ instance per WAN, an rpcd/ubus API, and a LuCI web app
    and state it in every release note and public announcement.
 
 ## Current status (update me)
-- Released: v3.5.0-owrt4 (2026-09-30; backend 3.5.0-r3, LuCI 1.1.0-r1):
+- Released: v3.5.0-owrt5 (2026-10-21; backend 3.5.0-r5, LuCI 1.1.0-r1):
+  stop/cleanup fixes only. #1: an exit before the controller section no
+  longer aborts cleanup with "DL: unbound variable". #3: terminate() treats
+  zombie children as terminated (inside the cleanup trap bash does not reap
+  them, so every call waited its full timeout, ~4 s, and procd's 5 s term
+  timeout SIGKILLed main and orphaned children); init sets term_timeout 15.
+  Verified on the user's router (25.12.5): early stop 0 orphans, no SIGKILL,
+  cleanup ~1.3-1.6 s; the router runs the owrt5 packages. 3.5.0-r4 was built
+  but never released (it had #1 only).
+- Previous: v3.5.0-owrt4 (2026-09-30; backend 3.5.0-r3, LuCI 1.1.0-r1):
   pre-release hardening (four-reviewer audit fixed: editable fields,
   tri-state flags, validation, narrow ACL, fork-free status writer, reset
   to base rates on stop, CI checksums, public docs) + SQM awareness and
   optional SQM management (manage_sqm). Verified on a real router
-  (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging;
-  the user's router runs the released owrt4 packages (manage_sqm on).
+  (OpenWrt 25.12, apk, 5G WAN, single instance) by the user before tagging.
 - README screenshots (images/luci-overview.png, luci-instances.png,
   luci-instance-general.png, luci-instance-sqm.png) taken by the user on
   the owrt4 candidate; retake when the UI changes visibly.
