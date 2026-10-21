@@ -13,9 +13,10 @@ set +e
 #    The end-to-end timing (zombies inside the cleanup trap) is covered by
 #    test_cleanup_early_stop.sh.
 zfile=$(mktemp)
-bash -c 'sleep 0 & echo $! > "$1"; exec sleep 3' _ "${zfile}" > /dev/null &
+# the child must exit after the exec, or bash may still reap it before exec'ing
+bash -c 'sleep 0.2 & echo $! > "$1"; exec sleep 3' _ "${zfile}" > /dev/null &
 zparent=$!
-sleep 0.3
+sleep 0.6
 zpid=$(< "${zfile}")
 process_is_zombie "${zpid}"; assert_eq "unreaped exited child is a zombie" 0 "$?"
 t0=${EPOCHREALTIME/.}
