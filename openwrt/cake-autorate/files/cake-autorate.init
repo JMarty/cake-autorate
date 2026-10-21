@@ -157,6 +157,9 @@ start_instance() {
 	procd_set_param env CAKE_AUTORATE_SCRIPT_PREFIX="$SCRIPT_PREFIX" CAKE_AUTORATE_CONFIG_PREFIX="$CONFIG_PREFIX"
 	procd_set_param file "$CONFIG_PREFIX/config.$id.sh"
 	procd_set_param respawn 3600 5 5
+	# cleanup_and_killall can take a few seconds (terminate timeouts, sleep_s 1); procd's
+	# default 5 s would SIGKILL main mid-cleanup and orphan its children (issue #3)
+	procd_set_param term_timeout 15
 	procd_set_param stderr 1
 	procd_close_instance
 }
