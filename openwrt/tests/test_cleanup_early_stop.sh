@@ -43,9 +43,14 @@ write_config wait
 bash "${tmpd}/cake-autorate.sh" "${tmpd}/config.wait.sh" > "${tmpd}/stdout.wait" 2>&1 &
 pid=$!
 sleep 3
+t_term=${EPOCHREALTIME/.}
 kill -TERM "${pid}"
 for _ in $(seq 50); do kill -0 "${pid}" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "${pid}" 2>/dev/null; then fail "wait: main exited after TERM" "still running"; kill -KILL "${pid}"; else pass "wait: main exited after TERM"; fi
+# issue #3: terminate() waited its full timeout on every already exited (zombie) child,
+# ~4 s in total, close to procd's term timeout; only the 1 s grace sleep should remain
+cleanup_ms=$(( (${EPOCHREALTIME/.} - t_term) / 1000 ))
+if (( cleanup_ms < 1700 )); then pass "wait: cleanup finished in ${cleanup_ms} ms (< 1700)"; else fail "wait: cleanup finished in under 1700 ms" "${cleanup_ms} ms"; fi
 sleep 1
 log="${tmpd}/log/cake-autorate.wait.log"
 assert_eq "wait: was stopped inside verify_ifs_up" 1 "$(cat "${log}" "${tmpd}/stdout.wait" 2>/dev/null | grep -c 'Starting: verify_ifs_up')"
