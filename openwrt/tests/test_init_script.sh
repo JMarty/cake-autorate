@@ -28,6 +28,7 @@ assert_contains "command" "param command ${REPO_ROOT}/cake-autorate.sh ${cfg_dir
 assert_contains "env" "param env CAKE_AUTORATE_SCRIPT_PREFIX=${REPO_ROOT} CAKE_AUTORATE_CONFIG_PREFIX=${cfg_dir}" "${log}"
 assert_contains "file tracked" "param file ${cfg_dir}/config.wan.sh" "${log}"
 assert_contains "respawn" "param respawn 3600 5 5" "${log}"
+assert_contains "term_timeout" "param term_timeout 15" "${log}"
 assert_contains "stderr" "param stderr 1" "${log}"
 [ -f "${cfg_dir}/config.wan.sh" ] && pass "config rendered" || fail "config rendered"
 [ -f "${cfg_dir}/config.lte.sh" ] && fail "disabled not rendered" || pass "disabled not rendered"

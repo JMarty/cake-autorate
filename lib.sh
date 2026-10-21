@@ -153,6 +153,17 @@ get_running_main_pid_for_run_path()
 	printf '%s\n' "${running_main_pid}"
 }
 
+process_is_zombie()
+{
+	# ${1} = pid; the state is the first field after the ")" closing the comm in /proc/<pid>/stat
+
+	local stat
+
+	read -r stat < "/proc/${1}/stat" 2> /dev/null || return 1
+	stat=${stat##*) }
+	[[ ${stat:0:1} == [ZX] ]]
+}
+
 terminate()
 {
 	# Send regular kill to processes and monitor terminations;
@@ -171,7 +182,12 @@ terminate()
 	do
 		for process in "${!pids[@]}"
 		do
-			kill -0 "${pids[${process}]}" 2> /dev/null || unset "pids[${process}]"
+			# fork: inside the cleanup trap bash does not reap exited children, and
+			# kill -0 succeeds on a zombie, so a zombie counts as terminated (issue #3)
+			if ! kill -0 "${pids[${process}]}" 2> /dev/null || process_is_zombie "${pids[${process}]}"
+			then
+				unset "pids[${process}]"
+			fi
 		done
 		[[ "${pids[*]}" ]] || return
 		sleep_s 0.1
