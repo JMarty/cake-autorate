@@ -156,10 +156,13 @@ get_running_main_pid_for_run_path()
 process_is_zombie()
 {
 	# ${1} = pid; the state is the first field after the ")" closing the comm in /proc/<pid>/stat
+	# A negative pid is a process group (irtt pingers), which has no stat file of its own.
+	# The redirection error must not reach stderr: intercept_stderr treats any output as fatal.
 
 	local stat
 
-	read -r stat < "/proc/${1}/stat" 2> /dev/null || return 1
+	[[ ${1} == -* ]] && return 1
+	{ read -r stat < "/proc/${1}/stat"; } 2> /dev/null || return 1
 	stat=${stat##*) }
 	[[ ${stat:0:1} == [ZX] ]]
 }
