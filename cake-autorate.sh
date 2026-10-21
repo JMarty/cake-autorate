@@ -38,6 +38,10 @@ exec {main_fd}<> <(:)
 # proc_pids['process_identifier']=${!}
 declare -A proc_pids
 
+# fork: direction indices are needed by cleanup_and_killall, which the EXIT trap can
+# run before the controller section below sets them (issue #1: early stop under set -u)
+DL=0 UL=1
+
 # Bash correctness options
 ## Disable globbing (expansion of *).
 set -f
