@@ -182,7 +182,7 @@ Instance editor — General tab (interfaces and rates) and SQM tab
 ### Versioning & stability
 
 Releases of this fork are tagged `v<upstream version>-owrt<N>`, e.g.
-`v3.5.0-owrt4` = upstream cake-autorate 3.5.0, fourth OpenWrt
+`v3.5.0-owrt5` = upstream cake-autorate 3.5.0, fifth OpenWrt
 packaging release. The two packages have their own version numbers:
 
 | Release tag    | `cake-autorate` | `luci-app-cake-autorate` |
@@ -191,6 +191,7 @@ packaging release. The two packages have their own version numbers:
 | v3.5.0-owrt2   | 3.5.0-r1        | —                        |
 | v3.5.0-owrt3   | 3.5.0-r2        | 1.0.0-r1                 |
 | v3.5.0-owrt4   | 3.5.0-r3        | 1.1.0-r1                 |
+| v3.5.0-owrt5   | 3.5.0-r4        | 1.1.0-r1                 |
 
 Only the files on the [Releases](../../releases) page are tested
 releases. The `master` branch of this fork may be ahead of the latest

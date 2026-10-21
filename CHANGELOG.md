@@ -12,7 +12,7 @@ package the upstream script for OpenWrt. They are tagged
 `v<upstream version>-owrt<N>`; the upstream algorithm is unchanged.
 The upstream history continues further below.
 
-### Unreleased
+### v3.5.0-owrt5 (2026-10-21) — cake-autorate 3.5.0-r4, luci-app-cake-autorate 1.1.0-r1
 
 Service (`cake-autorate`):
 
